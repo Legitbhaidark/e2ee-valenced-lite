@@ -27,6 +27,9 @@ export function initStorage(): void {
   storage.globalKeyHex ??= "";
   storage.keyV2 ??= "";
   storage.format ??= "v2";
+  storage.devMode ??= false; // developer options (unlocked by tapping the build number 5 times)
+  storage.devShortPw ??= false; // developer option: allow 1-character passwords
+  if (storage.format === "v1" && !storage.devMode) storage.format = "v2"; // v1 is behind developer options
   storage.preset ??= AES256.index;
   storage.padme ??= true;
   storage.channels ??= {};
@@ -143,9 +146,28 @@ export function setChannelEnabled(channelId: string, enabled: boolean): void {
 
 // ------------------------------------------------------------------------ password -> keys
 
-/** Same limits as the Aegires app, so any password that works there works here. */
+export function minPasswordLength(): number {
+  return storage.devShortPw ? 1 : 8;
+}
+
+/** "8 characters" / "1 character", for messages and hints. */
+export function passwordRule(): string {
+  const n = minPasswordLength();
+  return n + (n === 1 ? " character" : " characters");
+}
+
+/** Turns developer options on or off. Turning them off also switches off everything they unlocked. */
+export function setDeveloperMode(on: boolean): void {
+  storage.devMode = on;
+  if (!on) {
+    storage.devShortPw = false;
+    if (storage.format === "v1") storage.format = "v2";
+  }
+}
+
+/** Same limits as the Aegires app (unless the developer option for short passwords is on). */
 export function checkPassword(password: string): string | null {
-  if (password.length < 8) return "Use at least 8 characters";
+  if (password.length < minPasswordLength()) return "Use at least " + passwordRule();
   if (password.length > 256) return "Password too long (max 256)";
   return null;
 }

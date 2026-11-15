@@ -11,9 +11,11 @@ import {
   getPreset,
   hasGlobalKey,
   listChannelConfigs,
+  passwordRule,
   removeChannelConfig,
   setChannelEnabled,
   setChannelPassword,
+  setDeveloperMode,
   setGlobalPassword,
   setPreset,
 } from "../state.ts";
@@ -23,6 +25,7 @@ import { getSelfId } from "../self.ts";
 import { measureKdf, runSelfTest } from "../selftest.ts";
 import { diag, diagLines } from "../diag.ts";
 import { EngineHost } from "../engine/engine.ts";
+import { BUILD_NUMBER, DEVELOPER, PLUGIN_VERSION } from "../about.ts";
 
 // React Native binds after this script is evaluated, so each primitive is resolved at render time.
 const lazy = (names: string[], fallback?: () => any) => (props: any) => {
@@ -113,6 +116,21 @@ function SettingsInner() {
   const [testLines, setTestLines] = React.useState([] as string[]);
   const [pct, setPct] = React.useState(-1); // Argon2id progress, -1 = idle
   const onProgress = (f: number) => setPct(Math.round(f * 100));
+  const [buildTaps, setBuildTaps] = React.useState({ n: 0, t: 0 });
+  const tapBuild = () => {
+    if (storage.devMode) return showToast("Developer options are already on");
+    const now = Date.now();
+    const n = now - buildTaps.t > 3000 ? 1 : buildTaps.n + 1; // taps must follow each other quickly
+    if (n >= 5) {
+      setBuildTaps({ n: 0, t: 0 });
+      setDeveloperMode(true);
+      showToast("Developer options enabled");
+      refresh();
+    } else {
+      setBuildTaps({ n, t: now });
+      if (n >= 2) showToast((5 - n) + " more " + (5 - n === 1 ? "tap" : "taps") + " to enable developer options");
+    }
+  };
   const busyLabel = (what: string) => what + (pct >= 0 ? ` ${pct}%` : "...");
 
   // Run a slow async action with a busy flag, and report failures instead of crashing.
@@ -135,7 +153,7 @@ function SettingsInner() {
       <EngineHost />
       <Card
         title={"Global key " + (hasGlobalKey() ? "(set)" : "(not set)")}
-        hint="Used in every chat that has no channel key. Everyone in the chat must type the SAME password (at least 8 characters), and Aegires users must use the same one in the app. The password is not saved - only the keys derived from it (v1 and v2). Deriving the v2 key (Argon2id, 64 MiB) can take a while on a phone."
+        hint={"Used in every chat that has no channel key. Everyone in the chat must type the SAME password (at least " + passwordRule() + "), and Aegires users must use the same one in the app. The password is not saved - only the keys derived from it (v1 and v2). Deriving the v2 key (Argon2id, 64 MiB) can take a while on a phone."}
       >
         <Field value={pw} onChange={setPw} placeholder="Shared password" secret />
         <Button
@@ -154,7 +172,7 @@ function SettingsInner() {
 
       <Card
         title={"Format: " + (storage.format === "v1" ? "v1 (legacy)" : "v2, " + getPreset().label)}
-        hint="v2 is the current Aegires format: Argon2id keys, a fresh key per message and per file bound to the chat and the sender. Old v1 messages are always still decrypted. Use v1 only to talk to old Aegires versions."
+        hint="v2 is the current Aegires format: Argon2id keys, a fresh key per message and per file bound to the chat and the sender. Old v1 messages are always still decrypted."
       >
         {PRESETS.map((p: any) => (
           <Button
@@ -163,7 +181,6 @@ function SettingsInner() {
             onPress={() => { storage.format = "v2"; setPreset(p.index); refresh(); }}
           />
         ))}
-        <Button label={(storage.format === "v1" ? "\u2714 " : "") + "v1 legacy (AES-256-GCM, PBKDF2)"} onPress={() => { storage.format = "v1"; refresh(); }} />
         <ToggleRow label="Hide message length better (Padmé padding, up to ~12% longer; every v2 client can read it)" value={storage.padme !== false} onChange={(v) => { storage.padme = v; refresh(); }} />
       </Card>
 
@@ -241,6 +258,33 @@ function SettingsInner() {
           <Text key={i} style={{ color: l.startsWith("FAIL") ? C.danger : C.text, marginTop: 4, fontFamily: "monospace" }}>{l}</Text>
         ))}
       </Card>
+
+      <Card title="Plugin versions">
+        <Text style={{ color: C.text, marginTop: 8 }}>{"Developer: " + DEVELOPER}</Text>
+        <Text style={{ color: C.text, marginTop: 4 }}>{"Version: " + PLUGIN_VERSION}</Text>
+        <Touch onPress={tapBuild} style={{ marginTop: 4 }}>
+          <Text style={{ color: C.text }}>{"Build number: " + BUILD_NUMBER}</Text>
+        </Touch>
+        <Text style={{ color: C.muted, marginTop: 8 }}>{"Message format: Aegires v2 (v1 read-only)"}</Text>
+        <Text style={{ color: C.muted, marginTop: 4 }}>{"File format: Aegires v3"}</Text>
+        <Text style={{ color: C.muted, marginTop: 4 }}>{"Native module: " + (diag.installed["native crypto"] ?? "not started")}</Text>
+      </Card>
+
+      {storage.devMode ? (
+        <Card title="Developer options" hint="For testing only. These options make the client less secure.">
+          <ToggleRow
+            label="Use the v1 legacy format for sending (AES-256-GCM, PBKDF2). Older and less secure; only for talking to old Aegires versions"
+            value={storage.format === "v1"}
+            onChange={(v) => { storage.format = v ? "v1" : "v2"; refresh(); }}
+          />
+          <ToggleRow
+            label="Allow passwords as short as 1 character instead of 8. Makes the client less secure - proceed with caution"
+            value={!!storage.devShortPw}
+            onChange={(v) => { storage.devShortPw = v; refresh(); }}
+          />
+          <Button label="Turn developer options off" danger onPress={() => { setDeveloperMode(false); showToast("Developer options off"); refresh(); }} />
+        </Card>
+      ) : null}
     </ScrollView>
   );
 }
