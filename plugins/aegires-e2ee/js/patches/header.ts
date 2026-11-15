@@ -1,22 +1,27 @@
 // Draws the lock to the right of the name, next to the time, in a decrypted message's header
 // ("Name  \u{1F512} 11:55 PM") instead of in front of its text.
 //
-// Discord's chat is native: JS turns each message into a row object (RowManager.generate) and
-// sends the rows to the native list as JSON (DCDChatManager.updateRows / insertRows). We catch the
-// rows on both routes, so one working route is enough; a row gets the lock in front of its time
-// text once (the startsWith check stops a double lock). If neither route works, or rows carry no
-// text time, receive.ts falls back to the lock in front of the message text, so the marker never
-// disappears silently. The Diagnostics line "header lock" says which case you are in.
-import { after, before } from "../patch.ts";
+// Discord's chat is native: JS turns each message into a row object and sends the rows to the
+// native list as JSON. A row gets the lock in front of its time text once (the startsWith check
+// stops a double lock). Routes, any one is enough:
+//   A. a row-builder class: found by NAME (RowManager) or by SHAPE (a class with a generate()
+//      method whose name or methods mention "row");
+//   B. the functions that send the JSON rows to the native list (updateRows / insertRows), found
+//      by shape in any module and on NativeModules.
+// If no route works, or rows carry no text time, receive.ts falls back to the lock in front of the
+// message text, so the marker never disappears silently. Diagnostics shows "header lock" (state),
+// "header classes" (row-builder candidates seen) and "header natives" (native chat modules seen),
+// so a wrong guess about this Discord build can be corrected from a screenshot.
+import { after, before, whenFns } from "../patch.ts";
 import { rnModule, unscoped } from "../host.ts";
 import { storage } from "../storage.ts";
 import { LOCK, lockMode } from "../state.ts";
 import { diag } from "../diag.ts";
 import { wasEncrypted } from "./receive.ts";
 
-let routes = ""; // which routes are installed, for the diagnostics line
+let routes = "";
 let marked = 0;
-let shape = ""; // keys of the first encrypted row's message, to learn the row format
+let shape = "";
 const note = (msg: string) => { diag.installed["header lock"] = msg; };
 const status = (extra = "") => note([routes || "no route yet", marked ? `marked ${marked} rows` : "", shape, extra].filter(Boolean).join(" | "));
 
@@ -47,12 +52,33 @@ function mark(row: any): boolean {
   return false;
 }
 
+/** Marks the rows inside any JSON-array string argument; returns the (possibly rewritten) args. */
+function markRowArgs(args: any[]): any[] {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (typeof a !== "string" || a.charCodeAt(0) !== 91 /* [ */ || a.length > 4_000_000) continue;
+    try {
+      const rows = JSON.parse(a);
+      if (!Array.isArray(rows)) continue;
+      let changed = false;
+      for (const r of rows) if (mark(r)) changed = true;
+      if (changed) args[i] = JSON.stringify(rows);
+    } catch {}
+  }
+  return args;
+}
+
+const protoNames = (c: any): string[] => {
+  try { return Object.getOwnPropertyNames(c.prototype).filter((n) => n !== "constructor"); } catch { return []; }
+};
+
 export function installHeaderLock(): () => void {
   const undo: Array<() => void> = [];
+  const stops: Array<() => void> = [];
   const timers: any[] = [];
-  const patched = new Set<any>();
-  let stop = () => {};
-  let nativePatched = false;
+  const hooked = new Set<any>();
+  const classes: string[] = [];
+  let nativeKeys = "";
   status("looking for the chat rows");
 
   const armed = (route: string) => {
@@ -61,78 +87,111 @@ export function installHeaderLock(): () => void {
     status();
   };
 
-  // Route 1: RowManager.generate builds the row objects.
+  const hookRows = (mod: any, name: string, label: string) => {
+    try {
+      const fn = mod?.[name];
+      if (typeof fn !== "function" || hooked.has(fn)) return;
+      hooked.add(fn);
+      undo.push(before(name, mod, markRowArgs));
+      armed(label);
+    } catch (e) {
+      status(label + " patch failed: " + String((e as any)?.message ?? e).slice(0, 60));
+    }
+  };
+
+  const hookGenerate = (cls: any, label: string) => {
+    const proto = cls?.prototype;
+    if (!proto || typeof proto.generate !== "function" || hooked.has(proto)) return;
+    hooked.add(proto);
+    undo.push(after("generate", proto, (row: any) => {
+      try { mark(row); } catch {}
+      return row;
+    }));
+    armed(label);
+  };
+
   try {
     const { finders } = unscoped().modules;
     const f = finders.filters;
-    const filter = f.anyOf(f.withName("RowManager"), f.withDefaultExport(f.withName("RowManager")));
-    stop = finders.getModules(filter, (exp: any) => {
-      try {
-        const cls = typeof exp === "function" ? exp : exp?.default;
-        const proto = cls?.prototype;
-        if (!proto || typeof proto.generate !== "function" || patched.has(proto)) return;
-        patched.add(proto);
-        undo.push(after("generate", proto, (row: any) => {
-          try { mark(row); } catch {}
-          return row;
-        }));
-        armed("RowManager.generate");
-      } catch (e) {
-        status("RowManager patch failed: " + String((e as any)?.message ?? e).slice(0, 60));
-      }
-    });
+
+    // A1. By name.
+    try {
+      const byName = f.anyOf(f.withName("RowManager"), f.withDefaultExport(f.withName("RowManager")));
+      stops.push(finders.getModules(byName, (exp: any) => {
+        try { hookGenerate(typeof exp === "function" ? exp : exp?.default, "RowManager.generate"); } catch {}
+      }));
+    } catch (e) {
+      status("name lookup failed: " + String((e as any)?.message ?? e).slice(0, 60));
+    }
+
+    // A2. By shape: any class with a generate() method. Only ones that look row-related are patched
+    // (patching is harmless anyway: mark() ignores everything but our decrypted messages' rows).
+    try {
+      const withProtoFn = f.createFilterGenerator(
+        ([name]: [string], _id: any, exports: any) => {
+          const c = typeof exports === "function" ? exports : exports?.default;
+          return typeof c === "function" && typeof c.prototype?.[name] === "function";
+        },
+        ([name]: [string]) => "aegiresProto(" + name + ")",
+      );
+      stops.push(finders.getModules(withProtoFn("generate"), (exp: any) => {
+        try {
+          const cls = typeof exp === "function" ? exp : exp?.default;
+          const names = protoNames(cls);
+          const label = String(cls?.name || "(anonymous)");
+          if (classes.length < 8) {
+            classes.push(label + "[" + names.slice(0, 6).join(",") + "]");
+            diag.installed["header classes"] = classes.join(" ; ");
+          }
+          if (/row/i.test(label) || names.some((n) => /row/i.test(n))) hookGenerate(cls, label + ".generate");
+        } catch {}
+      }));
+    } catch (e) {
+      diag.installed["header classes"] = "shape lookup failed: " + String((e as any)?.message ?? e).slice(0, 60);
+    }
+
+    // B1. Modules exposing the functions that send rows to the native list.
+    for (const fn of ["updateRows", "insertRows"]) {
+      try { stops.push(whenFns([fn], (mod) => hookRows(mod, fn, "module." + fn))); } catch {}
+    }
   } catch (e) {
-    status("RowManager lookup failed: " + String((e as any)?.message ?? e).slice(0, 60));
+    status("module lookup failed: " + String((e as any)?.message ?? e).slice(0, 60));
   }
 
-  // Route 2: the JSON rows sent to the native chat list. React Native binds late, so retry for a while.
-  const tryNative = (): boolean => {
-    if (nativePatched) return true;
-    let mgr: any;
-    try { mgr = rnModule()?.NativeModules?.DCDChatManager; } catch {}
-    if (!mgr) return false;
-    for (const name of ["updateRows", "insertRows"]) {
-      if (typeof mgr[name] !== "function") continue;
+  // B2. The native chat module itself. React Native binds late, so retry for a while.
+  let tries = 0;
+  const tryNative = () => {
+    let nm: any;
+    try { nm = rnModule()?.NativeModules; } catch {}
+    if (nm) {
       try {
-        undo.push(before(name, mgr, (args: any[]) => {
-          for (let i = 0; i < args.length; i++) {
-            const a = args[i];
-            if (typeof a !== "string" || a.charCodeAt(0) !== 91 /* [ */ || a.length > 4_000_000) continue;
-            try {
-              const rows = JSON.parse(a);
-              if (!Array.isArray(rows)) continue;
-              let changed = false;
-              for (const r of rows) if (mark(r)) changed = true;
-              if (changed) args[i] = JSON.stringify(rows);
-            } catch {}
-          }
-          return args;
-        }));
-        nativePatched = true;
-      } catch (e) {
-        status("DCDChatManager." + name + " patch failed: " + String((e as any)?.message ?? e).slice(0, 60));
-      }
+        if (!nativeKeys) {
+          const keys = Object.keys(nm).filter((k) => /DCD|Chat|Row|Message|List/i.test(k)).slice(0, 10);
+          nativeKeys = keys.join(",") || "(none matching)";
+          diag.installed["header natives"] = nativeKeys;
+        }
+        for (const k of Object.keys(nm)) {
+          if (!/DCDChatManager/i.test(k)) continue;
+          for (const fn of ["updateRows", "insertRows"]) hookRows(nm[k], fn, k + "." + fn);
+        }
+      } catch {}
+    } else if (!nativeKeys) {
+      diag.installed["header natives"] = "react native module not available yet";
     }
-    if (nativePatched) armed("DCDChatManager rows");
-    return nativePatched;
+    if (++tries >= 20) {
+      clearInterval(iv);
+      if (!routes) status("no route found - lock shown in the text");
+    }
   };
-  if (!tryNative()) {
-    let tries = 0;
-    const iv = setInterval(() => {
-      if (tryNative() || ++tries >= 20) {
-        clearInterval(iv);
-        if (!nativePatched && !patched.size) status("no route found - lock shown in the text");
-      }
-    }, 1000);
-    timers.push(iv);
-  }
+  const iv = setInterval(tryNative, 1000);
+  timers.push(iv);
+  tryNative();
 
   return () => {
     timers.splice(0).forEach((t) => clearInterval(t));
-    try { stop(); } catch {}
+    stops.splice(0).forEach((s) => { try { s(); } catch {} });
     undo.splice(0).forEach((u) => { try { u(); } catch {} });
-    patched.clear();
-    nativePatched = false;
+    hooked.clear();
     routes = "";
     marked = 0;
     shape = "";
