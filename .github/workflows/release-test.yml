@@ -1,0 +1,79 @@
+# Test channel: pushes to the `test` branch publish to https://<owner>.github.io/<repo>/test/index.json
+# It lives inside the gh-pages branch (folder test/), so the main index and pool are never touched.
+# No git tags or GitHub releases are made. A version already in the test pool is not rebuilt: bump the version.
+
+name: Release test build
+
+on:
+  push:
+    branches: [test]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-pool
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  POOL_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+  PLAN: ${{ github.workspace }}/releases.json
+
+jobs:
+  release-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - run: bun install
+
+      - name: Check out gh-pages
+        run: |
+          git clone --depth 1 --branch gh-pages "$POOL_REMOTE" published
+          mkdir -p published/test/pool
+          git -C published config user.name 'github-actions[bot]'
+          git -C published config user.email 'github-actions[bot]@users.noreply.github.com'
+          git -C published config commit.gpgsign false
+
+      - name: Plan releases
+        id: plan
+        run: |
+          bun run plan-releases --pool published/test/pool --out "$PLAN"
+          echo "count=$(jq 'length' "$PLAN")" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugins
+        if: steps.plan.outputs.count != '0'
+        run: ./gradlew --no-daemon packageAllPlugins
+        env:
+          GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN }}
+
+      - name: Publish to the test pool
+        if: steps.plan.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"; owner="${owner,,}"
+          base="https://${owner}.github.io/${GITHUB_REPOSITORY#*/}/test"
+          echo "Serving the test pool from ${base}/pool"
+          jq -r '.[] | [.zip, .file] | @tsv' "$PLAN" > plan.tsv
+          while IFS=$'\t' read -r zip file; do
+            [ -f "$zip" ] || { echo "::error::missing artifact ${zip}"; exit 1; }
+            cp "$zip" "published/test/pool/${file}"
+          done < plan.tsv
+          bun run generate-index --dist published/test/pool --base-url "${base}/pool" --out published/test/index.json
+          git -C published add test
+          if git -C published diff --cached --quiet; then echo "Nothing to publish."; exit 0; fi
+          git -C published commit -m "Test build: $(jq -r '.[].file' "$PLAN" | tr '\n' ' ')"
+          for i in 1 2 3; do
+            git -C published push origin gh-pages && exit 0
+            git -C published pull --rebase origin gh-pages
+          done
+          echo "::error::could not push to gh-pages"; exit 1
