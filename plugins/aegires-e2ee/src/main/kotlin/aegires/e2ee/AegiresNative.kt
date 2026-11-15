@@ -90,7 +90,7 @@ val aegiresNative = plugin {
             val args = rawArgs.asDelegate()
             val original: String by args.string()
             val mime: String by args.string()
-            FileNames.randomFor(original, mime)
+            FileNames.encryptedName(original, mime)
         }
     }
 
