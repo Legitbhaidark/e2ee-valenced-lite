@@ -6,7 +6,7 @@ import { diag } from "./diag.ts";
 import { unscoped } from "./host.ts";
 import { canSend, isEncryptionOn, isForced, setChannelEnabled } from "./state.ts";
 
-const USAGE = "Usage: /e2ee on | off | status";
+const USAGE = "Usage: \\e2ee on | off | status";
 
 export function runE2ee(arg: string, channelId: string): void {
   const mode = arg.trim().toLowerCase();
@@ -30,7 +30,7 @@ export function runE2ee(arg: string, channelId: string): void {
 
 export function interceptTyped(channelId: string, content: unknown): boolean {
   if (typeof content !== "string") return false;
-  const m = /^\s*\/e2ee(?:\s+(\S+))?\s*$/i.exec(content);
+  const m = /^\s*[\\\/]e2ee(?:\s+(\S+))?\s*$/i.exec(content);
   if (!m) return false;
   runE2ee(m[1] ?? "status", channelId);
   return true;
