@@ -5,11 +5,13 @@ import android.graphics.BitmapFactory
 import android.media.ExifInterface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 
 /**
  * Pixel size of a file from Android's own decoders. Only the header is read, the image is never
- * fully decoded. The source is a plain path or a content:// uri (picked files). Image part adapted
- * from the Aegires app's BitmapDecoder.
+ * fully decoded. The source is a plain path or a content:// uri (picked files). The size is the one
+ * the picture is DRAWN at (EXIF / video rotation applied), which is what the Aegires app sends in
+ * its own "[sz:W,H]" tag. Image part adapted from the Aegires app's BitmapDecoder.
  */
 internal object MediaInfo {
     private const val MAX_PIXELS = 200_000_000L
@@ -34,7 +36,9 @@ internal object MediaInfo {
         }
         var w = bounds.outWidth
         var h = bounds.outHeight
-        if (w <= 0 || h <= 0 || w.toLong() * h > MAX_PIXELS) return ""
+        // Formats BitmapFactory cannot read the header of (HEIC, AVIF on newer Android): ask the media framework.
+        if (w <= 0 || h <= 0) return imageViaRetriever(ctx, src)
+        if (w.toLong() * h > MAX_PIXELS) return ""
         val orientation =
             try {
                 if (isUri(src)) {
@@ -63,6 +67,34 @@ internal object MediaInfo {
             h = t
         }
         return "$w,$h"
+    }
+
+    private fun imageViaRetriever(ctx: Context?, src: String): String {
+        if (Build.VERSION.SDK_INT < 28) return ""
+        val r = MediaMetadataRetriever()
+        try {
+            if (isUri(src)) {
+                if (ctx == null) return ""
+                r.setDataSource(ctx, Uri.parse(src))
+            } else {
+                r.setDataSource(src)
+            }
+            var w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_IMAGE_WIDTH)?.toIntOrNull() ?: 0
+            var h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_IMAGE_HEIGHT)?.toIntOrNull() ?: 0
+            val rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_IMAGE_ROTATION)?.toIntOrNull() ?: 0
+            if (w <= 0 || h <= 0 || w.toLong() * h > MAX_PIXELS) return ""
+            if (rotation == 90 || rotation == 270) {
+                val t = w
+                w = h
+                h = t
+            }
+            return "$w,$h"
+        } finally {
+            try {
+                r.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun video(ctx: Context?, src: String): String {

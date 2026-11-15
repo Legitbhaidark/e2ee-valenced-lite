@@ -133,6 +133,11 @@ function dimsFromBase64(b64: string, kind: MediaKind): Dims | null {
 /** Last-resort path that loads the whole file into JS: small files only. Native streams everything else. */
 const FALLBACK_MAX_BYTES = 32 * 1024 * 1024;
 
+/** Size parsed in JS from the file header (works for PNG/JPEG+EXIF/GIF/WebP/BMP and MP4). Small files only. */
+async function jsDims(src: string, kind: MediaKind): Promise<Dims | null> {
+  try { return dimsFromBase64(await readUriBase64(src, 24 * 1024 * 1024), kind); } catch { return null; }
+}
+
 /** Seals the file natively into <cache>/aegires/. Resolves to the new file:// uri, its size and, when asked, the plaintext's pixel size. */
 async function sealNative(src: string, seal: Seal, want: MediaKind | null = null): Promise<{ uri: string; size: number; dims: Dims | null }> {
   if (!nativeReady()) throw new Error("native module not available");
@@ -180,11 +185,32 @@ async function encryptUpload(u: any, seal: Seal): Promise<{ w: number; h: number
   const src: string = d.originalUri ?? d.uri;
 
   const kind: MediaKind | null = mime.startsWith("video/") || mimeFor(name).startsWith("video/") ? "video" : mime.startsWith("image/") || imageMimeFor(name) ? "image" : null;
-  // Pixel size for the "[sz:W,H]" tag (Aegires uses it to size the picture before it loads).
-  let size: Dims | null = kind ? await probeLocal(src, kind) : null;
+  // Pixel size for the "[sz:W,H]" tag. Aegires sizes the picture ONLY from this tag (Discord gives
+  // it no width/height for an encrypted file), so a missing or wrong size shows up there as black
+  // bars. Several sources are tried, the most exact (Android's decoders, EXIF applied) first.
+  let size: Dims | null = null;
+  let how = "";
+  if (kind) {
+    size = await probeLocal(src, kind);
+    if (size) how = "android decoder";
+    if (!size && d.uri !== src) {
+      size = await probeLocal(d.uri, kind);
+      if (size) how = "android decoder (copy)";
+    }
+  }
   const sealed = await sealNative(src, seal, kind && !size ? kind : null);
-  if (!size) size = sealed.dims;
-  if (!size && kind === "image") size = await imageSize(src);
+  if (!size && sealed.dims) { size = sealed.dims; how = "file bytes"; }
+  if (!size && kind) {
+    size = await jsDims(src, kind);
+    if (size) how = "file header";
+  }
+  if (!size && kind === "image") {
+    size = await imageSize(src);
+    if (size) how = "react native";
+  }
+  diag.installed["last upload size"] = kind
+    ? size ? `${kind} ${size.w}x${size.h} via ${how}` : `${kind} - NO SIZE FOUND (Aegires will show black bars)`
+    : "not an image or video";
   const tmp = sealed.uri;
   const encSize = sealed.size;
   const encName = await nativeRandomName(name, mime);
