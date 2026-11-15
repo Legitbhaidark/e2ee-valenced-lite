@@ -75,6 +75,7 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
   if (!m || typeof m !== "object") return;
   const channelId: string | undefined = m.channel_id ?? m.channelId ?? fallbackChannelId;
   const authorId = authorOf(m);
+  let tag: { w: number; h: number } | null = null; // the sender's [sz:W,H] pixel size
 
   if (looksEncrypted(m.content)) {
     diag.encSeen++;
@@ -85,6 +86,7 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       remember(m.id);
       // Aegires puts "[sz:W,H]" in front of image captions; hide it from the visible text.
       const sp = splitSizeTag(plain);
+      if (sp.width !== null && sp.width > 0 && sp.height > 0) tag = { w: sp.width, h: sp.height };
       m.content = sp.text || sp.width === null ? (storage.showLock ? LOCK : "") + sp.text : "";
     } else if (r === "nokey") {
       diag.noKey++;
@@ -94,7 +96,7 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       diag.wrongKey++;
     }
   }
-  if (Array.isArray(m.attachments) && m.attachments.length) handleAttachments(m, channelId, authorId);
+  if (Array.isArray(m.attachments) && m.attachments.length) handleAttachments(m, channelId, authorId, tag);
   // Reply previews ("replying to ...") carry their own copy of the original message.
   if (m.referenced_message) decryptMessage(m.referenced_message, channelId);
   // Forwarded messages carry snapshots of the original.

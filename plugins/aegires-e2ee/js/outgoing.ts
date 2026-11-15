@@ -6,14 +6,14 @@
 import { notify } from "./notify.ts";
 import { RN } from "./rt.ts";
 import { MAX_PLAINTEXT_LEN, encryptBytes, encryptText, looksEncrypted } from "./crypto/wire.ts";
-import { MAX_FILE_BYTES, encryptedFileName, extOf, imageMimeFor, makeSizeTag } from "./crypto/files.ts";
+import { MAX_FILE_BYTES, encryptedFileName, extOf, imageDims, imageMimeFor, makeSizeTag, mimeFor, videoDims } from "./crypto/files.ts";
 import { storage } from "./storage.ts";
 import { encryptFile, encryptMessage, maxPlaintextBytes, utf8Length } from "./crypto/v2.ts";
 import { getSendFormat, getSendKey, getSendKeyV2, getSendPreset, isEncryptionOn } from "./state.ts";
 import { getSelfId } from "./self.ts";
 import { readUri, readUriBase64, tempName, writeCacheFile, writeCacheFileBase64 } from "./native.ts";
-import { base64Encode } from "./crypto/base64.ts";
-import { cacheDir, nativeRandomName, nativeReady, nativeSealBytes, nativeSealFile, type FileSeal } from "./engine/engine.ts";
+import { base64Decode, base64Encode } from "./crypto/base64.ts";
+import { cacheDir, nativeMediaInfo, nativeRandomName, nativeReady, nativeSealBytes, nativeSealFile, type FileSeal } from "./engine/engine.ts";
 import { diag } from "./diag.ts";
 
 export const BLOCK = Symbol("block");
@@ -101,19 +101,51 @@ const sizes = new Map<string, { w: number; h: number } | null>();
 /** What the native file sealing needs: the v2 master key (base64), preset, channel and our user id. */
 type Seal = FileSeal;
 
-/** Seals the file natively into <cache>/aegires/. Resolves to the new file:// uri and its size. */
-async function sealNative(src: string, seal: Seal): Promise<{ uri: string; size: number }> {
+type Dims = { w: number; h: number };
+type MediaKind = "image" | "video";
+
+/** Plain file path of a file:// uri or an absolute path; null for content:// and the like. */
+function localPath(uri: string): string | null {
+  if (uri.startsWith("/")) return uri;
+  if (!uri.startsWith("file://")) return null;
+  const raw = uri.slice(7);
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
+/** Size as Android's own decoders report it (EXIF / video rotation applied). Null if unknown. */
+async function probeLocal(src: string, kind: MediaKind): Promise<Dims | null> {
+  const path = localPath(src);
+  if (!path || !nativeReady()) return null;
+  try { return await nativeMediaInfo(path, kind); } catch { return null; }
+}
+
+/** Size parsed from file bytes JS already read. Images need only the header; videos the whole file. */
+function dimsFromBase64(b64: string, kind: MediaKind): Dims | null {
+  try {
+    const bytes = base64Decode(kind === "image" ? b64.slice(0, 131072) : b64);
+    if (!bytes) return null;
+    return kind === "image" ? imageDims(bytes) : videoDims(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** Seals the file natively into <cache>/aegires/. Resolves to the new file:// uri, its size and, when asked, the plaintext's pixel size. */
+async function sealNative(src: string, seal: Seal, want: MediaKind | null = null): Promise<{ uri: string; size: number; dims: Dims | null }> {
   if (!nativeReady()) throw new Error("native module not available");
   const out = `${await cacheDir()}/aegires/${tempName("bin")}`;
   let size: number;
+  let dims: Dims | null = null;
   try {
     size = await nativeSealFile(seal, src, out, MAX_FILE_BYTES);
   } catch (e) {
     if (String((e as any)?.message ?? e).includes("file too large")) throw e;
     // Java cannot open some uris itself (content://): read the bytes here, seal them natively.
-    size = await nativeSealBytes(seal, await readUriBase64(src, MAX_FILE_BYTES), out, MAX_FILE_BYTES);
+    const b64 = await readUriBase64(src, MAX_FILE_BYTES);
+    if (want) dims = dimsFromBase64(b64, want);
+    size = await nativeSealBytes(seal, b64, out, MAX_FILE_BYTES);
   }
-  return { uri: "file://" + out, size };
+  return { uri: "file://" + out, size, dims };
 }
 
 /** Best-effort file name of an upload object (Discord's shape differs between places). */
@@ -141,8 +173,12 @@ async function encryptUpload(u: any, seal: Seal): Promise<{ w: number; h: number
   const mime: string = d.mimeType ?? d.type ?? u.mimeType ?? "";
   const src: string = d.originalUri ?? d.uri;
 
-  const size = mime.startsWith("image/") || imageMimeFor(name) ? await imageSize(src) : null;
-  const sealed = await sealNative(src, seal);
+  const kind: MediaKind | null = mime.startsWith("video/") || mimeFor(name).startsWith("video/") ? "video" : mime.startsWith("image/") || imageMimeFor(name) ? "image" : null;
+  // Pixel size for the "[sz:W,H]" tag (Aegires uses it to size the picture before it loads).
+  let size: Dims | null = kind ? await probeLocal(src, kind) : null;
+  const sealed = await sealNative(src, seal, kind && !size ? kind : null);
+  if (!size) size = sealed.dims;
+  if (!size && kind === "image") size = await imageSize(src);
   const tmp = sealed.uri;
   const encSize = sealed.size;
   const encName = await nativeRandomName(name, mime);

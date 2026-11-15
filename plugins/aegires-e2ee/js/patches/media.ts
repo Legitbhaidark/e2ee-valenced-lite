@@ -103,15 +103,23 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
 }
 
 // ---------------------------------------------------------------- entry points
-export function handleAttachments(m: any, channelId: string | undefined, authorId: string | undefined): void {
+export function handleAttachments(m: any, channelId: string | undefined, authorId: string | undefined, tag: { w: number; h: number } | null = null): void {
   if (!attachmentsEnabled(storage.attachmentsExp) || !nativeReady() || !Array.isArray(m.attachments)) return;
   const pending: Array<Promise<void>> = [];
+  let tagUsed = false;
   for (const a of m.attachments) {
-    if (!isEncAttachment(a) || !imageMimeFor(originalFileName(String(a.filename)))) continue; // images only for now
+    if (!isEncAttachment(a)) continue;
+    const orig = originalFileName(String(a.filename));
+    const isImage = !!imageMimeFor(orig);
+    if (!isImage && !mimeFor(orig).startsWith("video/")) continue;
     const id = idOf(a);
     if (!id) continue;
     const hit = done.get(id);
     if (hit) { apply(a, hit); continue; }
+    // The sender's [sz:W,H] tag (first picture/video only) lets Discord reserve the right space
+    // before the file is downloaded; the decrypted file's real size replaces it afterwards.
+    if (tag && !tagUsed) { a.width = tag.w; a.height = tag.h; tagUsed = true; }
+    if (!isImage) continue; // videos: decryption comes in the next step
     if (failed.has(id) || queued.has(id)) continue;
     const keys = getReceiveKeysV2(channelId);
     if (!channelId || !authorId || !keys.length) continue;
