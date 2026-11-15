@@ -22,8 +22,27 @@ import { wasEncrypted } from "./receive.ts";
 let routes = "";
 let marked = 0;
 let shape = "";
+const strippedFields: string[] = [];
 const note = (msg: string) => { diag.installed["header lock"] = msg; };
-const status = (extra = "") => note([routes || "no route yet", marked ? `marked ${marked} rows` : "", shape, extra].filter(Boolean).join(" | "));
+const status = (extra = "") => note([routes || "no route yet", marked ? `marked ${marked} rows` : "", strippedFields.length ? "front lock removed from: " + strippedFields.join(",") : "", shape, extra].filter(Boolean).join(" | "));
+
+/** Removes a leading lock from the text fields of a row's message. True if anything changed. */
+function stripTextLock(msg: any): boolean {
+  let changed = false;
+  for (const k of Object.keys(msg)) {
+    if (k === "timestamp" || k === "timestampText") continue;
+    const v = msg[k];
+    if (typeof v === "string" && v.startsWith(LOCK)) {
+      msg[k] = v.slice(LOCK.length);
+      changed = true;
+      if (!strippedFields.includes(k) && strippedFields.length < 4) {
+        strippedFields.push(k);
+        status();
+      }
+    }
+  }
+  return changed;
+}
 
 /** Puts the lock in front of the time text of a row of a decrypted message. True if it changed the row. */
 function mark(row: any): boolean {
@@ -38,7 +57,10 @@ function mark(row: any): boolean {
   for (const k of ["timestamp", "timestampText"]) {
     const t = msg[k];
     if (typeof t === "string") {
-      if (t.startsWith(LOCK)) return false;
+      // The lock now lives next to the time, so remove any lock left in front of the text. Messages
+      // decrypted before this hook was ready (or while it was off) carry one in their cached content.
+      const stripped = stripTextLock(msg);
+      if (t.startsWith(LOCK)) return stripped;
       msg[k] = LOCK + t;
       marked++;
       if (marked === 1) status();
@@ -195,6 +217,7 @@ export function installHeaderLock(): () => void {
     routes = "";
     marked = 0;
     shape = "";
+    strippedFields.length = 0;
     lockMode.header = false;
   };
 }
