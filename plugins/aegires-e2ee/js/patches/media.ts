@@ -8,7 +8,7 @@
 //      decrypts it straight into the cache dir, so the bytes never cross the JS bridge. Android
 //      then reports the pixel size.
 //   3. A partial MESSAGE_UPDATE is dispatched so the message store picks up the rewritten attachment.
-// Images only for now. Decrypted files are deleted when the plugin starts and when it stops.
+// Images, GIFs and videos. Decrypted files are deleted when the plugin starts and when it stops.
 import { storage } from "../storage.ts";
 import { unscoped } from "../host.ts";
 import { base64Encode } from "../crypto/base64.ts";
@@ -78,6 +78,13 @@ function apply(a: any, d: Decrypted): void {
   // Discord only draws images inline when it knows their size.
   a.width = d.w;
   a.height = d.h;
+  if (d.mime.startsWith("video/")) {
+    // Discord's inline player streams only over http(s) and fails on file://. Declared as an
+    // image, the chat draws the video's first frame instead (its image loader reads local
+    // videos). Playing it on tap is a separate step.
+    a.content_type = "image/jpeg";
+    a.filename = d.name + ".jpg";
+  }
 }
 
 async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: string, authorId: string): Promise<Decrypted> {
@@ -98,8 +105,10 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
     }
   }
   if (size < 0) throw last ?? new Error("wrong key or corrupted file");
-  const info = await nativeMediaInfo(out, "image").catch(() => null);
-  return { uri: "file://" + out, name, mime: mimeFor(name), size, w: info?.w ?? (Number(a.width) || 480), h: info?.h ?? (Number(a.height) || 360) };
+  const mime = mimeFor(name);
+  const video = mime.startsWith("video/");
+  const info = await nativeMediaInfo(out, video ? "video" : "image").catch(() => null);
+  return { uri: "file://" + out, name, mime, size, w: info?.w ?? (Number(a.width) || (video ? 640 : 480)), h: info?.h ?? (Number(a.height) || (video ? 360 : 360)) };
 }
 
 // ---------------------------------------------------------------- entry points
@@ -110,8 +119,7 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
   for (const a of m.attachments) {
     if (!isEncAttachment(a)) continue;
     const orig = originalFileName(String(a.filename));
-    const isImage = !!imageMimeFor(orig);
-    if (!isImage && !mimeFor(orig).startsWith("video/")) continue;
+    if (!imageMimeFor(orig) && !mimeFor(orig).startsWith("video/")) continue;
     const id = idOf(a);
     if (!id) continue;
     const hit = done.get(id);
@@ -119,7 +127,6 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
     // The sender's [sz:W,H] tag (first picture/video only) lets Discord reserve the right space
     // before the file is downloaded; the decrypted file's real size replaces it afterwards.
     if (tag && !tagUsed) { a.width = tag.w; a.height = tag.h; tagUsed = true; }
-    if (!isImage) continue; // videos: decryption comes in the next step
     if (failed.has(id) || queued.has(id)) continue;
     const keys = getReceiveKeysV2(channelId);
     if (!channelId || !authorId || !keys.length) continue;
