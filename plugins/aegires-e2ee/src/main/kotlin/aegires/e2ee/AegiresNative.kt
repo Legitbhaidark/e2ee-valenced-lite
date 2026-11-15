@@ -38,6 +38,26 @@ val aegiresNative = plugin {
             // The last expression is the return value: the derived key as base64.
             NativeOps.argon2id(password, salt, passes, memoryKiB, outLen)
         }
+
+        // Aegires v2 messages through the Java Crypto copied from the Aegires app. All strings.
+        registerNativeAsyncMethod("aegires.v2encrypt") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val master: String by args.string()
+            val preset: String by args.string()
+            val channelId: String by args.string()
+            val senderId: String by args.string()
+            val plain: String by args.string()
+            NativeOps.v2Encrypt(master, preset, channelId, senderId, plain)
+        }
+
+        registerNativeAsyncMethod("aegires.v2decrypt") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val master: String by args.string()
+            val channelId: String by args.string()
+            val senderId: String by args.string()
+            val wire: String by args.string()
+            NativeOps.v2Decrypt(master, channelId, senderId, wire)
+        }
     }
 
     stop {

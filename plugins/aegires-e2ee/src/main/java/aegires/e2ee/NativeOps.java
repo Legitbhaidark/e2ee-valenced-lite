@@ -26,6 +26,35 @@ public final class NativeOps {
         return encode(out);
     }
 
+    // ---- Aegires v2 messages (Crypto.java, copied from Aegires) ----------------------------------
+    // The master key is the 32-byte Argon2id output (base64). Plaintext crosses the bridge as base64
+    // of its UTF-8 bytes so no character can be mangled. Failure throws, so JS can fall back.
+
+    private static javax.crypto.SecretKey masterKey(String masterB64) {
+        byte[] master = decode(masterB64);
+        if (master.length != 32) throw new IllegalArgumentException("master key length");
+        javax.crypto.SecretKey key = new javax.crypto.spec.SecretKeySpec(master, "HKDF");
+        java.util.Arrays.fill(master, (byte) 0);
+        return key;
+    }
+
+    /** Encrypts one message; returns the wire text ("§" + base64). */
+    public static String v2Encrypt(String masterB64, String presetIndex, String channelId, String senderId, String plainB64) {
+        Crypto.Preset preset = Crypto.Preset.fromIndex(Integer.parseInt(presetIndex));
+        if (preset == null) throw new IllegalArgumentException("preset");
+        String plain = new String(decode(plainB64), java.nio.charset.StandardCharsets.UTF_8);
+        String wire = Crypto.encrypt(plain, masterKey(masterB64), preset, channelId, senderId);
+        if (wire == null) throw new IllegalArgumentException("encrypt failed");
+        return wire;
+    }
+
+    /** Decrypts one message; returns the plaintext as base64 of its UTF-8 bytes. */
+    public static String v2Decrypt(String masterB64, String channelId, String senderId, String wire) {
+        String plain = Crypto.decrypt(wire, masterKey(masterB64), channelId, senderId);
+        if (plain == null) throw new IllegalArgumentException("decrypt failed");
+        return encode(plain.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
     private static final char[] ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".toCharArray();
 
     static String encode(byte[] in) {

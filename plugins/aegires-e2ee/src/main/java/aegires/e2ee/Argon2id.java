@@ -1,5 +1,5 @@
 // Copied from the Aegires Android app: https://github.com/Legitbhaidark/Aegires (Argon2id.java)
-// Licensed under the GNU LGPL v3 (see LGPL-NOTICE.md). Only the package line was changed.
+// Licensed under the GNU LGPL v3 (see LGPL-NOTICE.md). Changed: package line and the Base64 import only.
 package aegires.e2ee;
 
 import java.util.Arrays;

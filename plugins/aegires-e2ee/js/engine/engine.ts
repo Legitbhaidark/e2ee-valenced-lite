@@ -9,6 +9,7 @@ import { unscoped } from "../host.ts";
 import { setArgon2Offload } from "../crypto/kdf2.ts";
 import { base64Decode, base64Encode } from "../crypto/base64.ts";
 import { diag } from "../diag.ts";
+import { AES256, decryptMessage, encryptMessage } from "../crypto/v2.ts";
 
 /** Method namespace: must match the names registered in src/main/kotlin/aegires/e2ee/AegiresNative.kt */
 const NS = "aegires";
@@ -74,6 +75,43 @@ async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: nu
   }
 }
 
+const V2_TIMEOUT_MS = 10000;
+
+/** v2 message encrypt through the Java Crypto (copied from Aegires). Rejects on any failure. */
+export async function nativeV2Encrypt(master: Uint8Array, preset: number, channelId: string, senderId: string, text: string): Promise<string> {
+  const out = await callNative("v2encrypt", [base64Encode(master), String(preset), channelId, senderId, base64Encode(utf8(text))], V2_TIMEOUT_MS);
+  if (typeof out !== "string") throw new Error("native returned no data");
+  return out;
+}
+
+/** v2 message decrypt through the Java Crypto. Rejects on any failure (wrong key, channel, sender, tampering). */
+export async function nativeV2Decrypt(master: Uint8Array, channelId: string, senderId: string, wire: string): Promise<string> {
+  const out = await callNative("v2decrypt", [base64Encode(master), channelId, senderId, wire], V2_TIMEOUT_MS);
+  const bytes = typeof out === "string" ? base64Decode(out) : null;
+  if (!bytes) throw new Error("native returned no data");
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Cross-check of the two implementations of the same format: what the JS code encrypts, the Java
+ * code must decrypt, and the other way round. Shown in Diagnostics; it never switches anything off.
+ */
+async function checkV2(): Promise<void> {
+  const master = Uint8Array.from({ length: 32 }, (_, i) => i);
+  const ch = "123456789012345678";
+  const me = "876543210987654321";
+  const text = "h\u00e9llo \u00a7 \u2713 self-check";
+  try {
+    const fromJs = encryptMessage(text, master, AES256, ch, me);
+    if ((await nativeV2Decrypt(master, ch, me, fromJs)) !== text) throw new Error("Java could not read JS output");
+    const fromJava = await nativeV2Encrypt(master, AES256.index, ch, me, text);
+    if (decryptMessage(fromJava, master, ch, me) !== text) throw new Error("JS could not read Java output");
+    diag.installed["native v2 crypto"] = "ok (Java Crypto and JS agree)";
+  } catch (e) {
+    diag.installed["native v2 crypto"] = "not used (" + String((e as any)?.message ?? e).split("\n")[0].slice(0, 120) + ")";
+  }
+}
+
 /** Looks for the native half, checks it, and if it passes uses it for Argon2id. Never throws. */
 export async function startNative(): Promise<boolean> {
   nativeOk = false;
@@ -85,6 +123,7 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
+    void checkV2();
   } catch (e) {
     // First line only (a native failure carries a whole Java stack trace), long enough to name the exception.
     why = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
