@@ -58,6 +58,22 @@ async function nativeArgon2(password: Uint8Array, salt: Uint8Array, t: number, m
   return typeof out === "string" ? base64Decode(out) : null;
 }
 
+/** Real-size offload: records success or the exact failure in Diagnostics, then lets the JS code take over on failure. */
+async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: number, mKiB: number, len: number): Promise<Uint8Array | null> {
+  try {
+    const out = await nativeArgon2(password, salt, t, mKiB, len);
+    if (!out) throw new Error("native returned no data");
+    diag.engineJobs++;
+    diag.engineLastError = "";
+    return out;
+  } catch (e) {
+    diag.engineFallbacks++;
+    diag.engineLastError = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
+    diag.installed["native crypto"] = "FAILED at real size, JS used (" + diag.engineLastError + ")";
+    return null;
+  }
+}
+
 /** Looks for the native half, checks it, and if it passes uses it for Argon2id. Never throws. */
 export async function startNative(): Promise<boolean> {
   nativeOk = false;
@@ -73,7 +89,8 @@ export async function startNative(): Promise<boolean> {
     // First line only (a native failure carries a whole Java stack trace), long enough to name the exception.
     why = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
   }
-  setArgon2Offload(nativeOk ? nativeArgon2 : null);
+  diag.engine = nativeOk ? "native (Kotlin Argon2id)" : "not in this build (JS crypto only)";
+  setArgon2Offload(nativeOk ? nativeArgon2Tracked : null);
   diag.installed["native crypto"] = nativeOk ? "ok (Kotlin Argon2id, self-checked)" : "not used - JS crypto (" + why + ")";
   return nativeOk;
 }
