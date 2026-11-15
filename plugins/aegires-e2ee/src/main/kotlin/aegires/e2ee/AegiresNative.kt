@@ -4,6 +4,7 @@ package aegires.e2ee
 
 import app.valenced.bridge.asDelegate
 import app.valenced.plugins.plugin
+import app.valenced.xposed.api.registerNativeAsyncMethod
 import app.valenced.xposed.api.registerNativeMethod
 
 /**
@@ -24,7 +25,9 @@ val aegiresNative = plugin {
         registerNativeMethod("aegires.ping") { _ -> "pong" }
 
         // All arguments are strings: password and salt as base64, the numbers in decimal.
-        registerNativeMethod("aegires.argon2id") { rawArgs ->
+        // Async: the 64 MiB derivation runs on a background dispatcher, so it never blocks the
+        // React native-modules thread (which would freeze Discord's other native calls for seconds).
+        registerNativeAsyncMethod("aegires.argon2id") { rawArgs ->
             val args = rawArgs.asDelegate()
             val password: String by args.string()
             val salt: String by args.string()

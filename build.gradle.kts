@@ -203,10 +203,20 @@ configure(subprojects.filter { project -> pluginRoots.any { project.path.startsW
         mustRunAfter(cleanTasks)
 
         // Only this module's own classes are DEXed. Dependencies compileOnly.
+        // The javac output directory differs between AGP versions (AGP 9.1 writes to
+        // intermediates/javac/release/compileReleaseJavaWithJavac/classes), so ask the task itself
+        // instead of guessing. A wrong guess silently drops every .java class from the jar.
+        val javacOut = provider {
+            (tasks.getByName("compileReleaseJavaWithJavac") as org.gradle.api.tasks.compile.JavaCompile)
+                .destinationDirectory.get()
+        }
         val classDirs = files(
             // AGP 9 built-in Kotlin output, then the pre-AGP 9 location
             layout.buildDirectory.dir("intermediates/built_in_kotlinc/release/compileReleaseKotlin/classes"),
             layout.buildDirectory.dir("tmp/kotlin-classes/release"),
+            javacOut,
+            // Older javac locations, kept as fallbacks
+            layout.buildDirectory.dir("intermediates/javac/release/compileReleaseJavaWithJavac/classes"),
             layout.buildDirectory.dir("intermediates/javac/release/classes"),
         )
         inputs.files(classDirs).withPropertyName("classDirs").optional()
@@ -223,6 +233,18 @@ configure(subprojects.filter { project -> pluginRoots.any { project.path.startsW
         doLast {
             val classFiles = classDirs.asFileTree.matching { include("**/*.class") }.files
             if (classFiles.isEmpty()) error("No compiled classes found to dex in $path.")
+
+            // Every Java source must end up in the jar. Without this check a missing javac output
+            // directory still builds a "working" jar that only fails at runtime (NoClassDefFoundError).
+            val javaSrc = file("src/main/java")
+            if (javaSrc.isDirectory) {
+                val missing = javaSrc.walkTopDown()
+                    .filter { it.isFile && it.extension == "java" }
+                    .map { it.relativeTo(javaSrc).invariantSeparatorsPath.removeSuffix(".java") + ".class" }
+                    .filter { rel -> classFiles.none { it.invariantSeparatorsPath.endsWith("/$rel") } }
+                    .toList()
+                if (missing.isNotEmpty()) error("Java classes missing from the dex input of $path: $missing")
+            }
 
             val sdkDir = sdkDirProvider.get().asFile
             // Use newest d8 as the AGP-default build-tools could ship one too old for class files from a newer toolchain

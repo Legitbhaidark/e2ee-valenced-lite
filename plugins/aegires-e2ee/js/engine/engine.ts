@@ -70,7 +70,8 @@ export async function startNative(): Promise<boolean> {
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
   } catch (e) {
-    why = String((e as any)?.message ?? e).slice(0, 70);
+    // First line only (a native failure carries a whole Java stack trace), long enough to name the exception.
+    why = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
   }
   setArgon2Offload(nativeOk ? nativeArgon2 : null);
   diag.installed["native crypto"] = nativeOk ? "ok (Kotlin Argon2id, self-checked)" : "not used - JS crypto (" + why + ")";
