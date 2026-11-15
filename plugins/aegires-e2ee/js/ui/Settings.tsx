@@ -249,7 +249,7 @@ function SettingsInner() {
             run("Measure", async () => {
               const jobs = diag.engineJobs;
               const ms = await measureKdf(onProgress);
-              const how = diag.engineJobs > jobs ? "natively (Kotlin)" : "in plain JS - native: " + (diag.installed["native crypto"] ?? "not started") + (diag.engineLastError ? ", last error: " + diag.engineLastError : "");
+              const how = diag.engineJobs > jobs ? "natively - " + (diag.argon2Engine || "Kotlin") : "in plain JS - native: " + (diag.installed["native crypto"] ?? "not started") + (diag.engineLastError ? ", last error: " + diag.engineLastError : "");
               setTestLines([`Argon2id 64 MiB took ${(ms / 1000).toFixed(1)} s on this phone, ${how}`]);
             })
           }

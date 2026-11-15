@@ -4,10 +4,12 @@ package aegires.e2ee
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import app.valenced.bridge.asDelegate
 import app.valenced.plugins.plugin
 import app.valenced.xposed.api.registerNativeAsyncMethod
 import app.valenced.xposed.api.registerNativeMethod
+import java.io.File
 
 /**
  * Native half of the Aegires E2EE plugin (`dist.android.class` in manifest.json).
@@ -25,10 +27,27 @@ val aegiresNative = plugin {
 
         // The app's Context, to read content:// uris (picked files) as streams instead of through JS.
         var appContext: Context? = null
-        withAppContext { appContext = it }
+        withAppContext { ctx ->
+            appContext = ctx
+            // Optional C Argon2id, packed in plugin.jar as lib/<abi>/libaegirescrypto.so. Any problem
+            // leaves the Java Argon2id in charge (same bytes); see NativeArgon2.status().
+            try {
+                NativeArgon2.load(
+                    NativeArgon2::class.java.classLoader,
+                    File(ctx.codeCacheDir, "aegires-native"),
+                    Build.SUPPORTED_ABIS,
+                )
+            } catch (t: Throwable) {
+                log.i("C Argon2id not loaded: ${t.javaClass.simpleName}")
+            }
+            log.i("Argon2id engine: ${NativeArgon2.status()}")
+        }
 
         // The JS side calls this once to find out whether the native half is installed.
         registerNativeMethod("aegires.ping") { _ -> "pong" }
+
+        // "c:<abi>" when Argon2id runs in the C library, otherwise "java:<why not>" (for Diagnostics).
+        registerNativeMethod("aegires.argon2engine") { _ -> NativeOps.argon2Engine() }
 
         // All arguments are strings: password and salt as base64, the numbers in decimal.
         // Async: the 64 MiB derivation runs on a background dispatcher, so it never blocks the

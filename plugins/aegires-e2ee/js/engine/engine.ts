@@ -182,6 +182,25 @@ async function checkV2(): Promise<void> {
   }
 }
 
+/** Which Argon2id the native half runs. The C library loads a moment after start, so ask a few times. */
+async function readArgon2Engine(): Promise<string> {
+  let last = "Java";
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await callNative("argon2engine", [], PING_TIMEOUT_MS);
+      if (typeof r !== "string") return last;
+      if (r.startsWith("c:")) return "C library (" + r.slice(2) + ")";
+      const why = r.replace(/^java:/, "");
+      last = "Java (" + why + ")";
+      if (!/not loaded yet/.test(why)) return last;
+    } catch {
+      return "Java (old native half, no C library)";
+    }
+    await new Promise((res) => setTimeout(res, 400));
+  }
+  return last;
+}
+
 /** Looks for the native half, checks it, and if it passes uses it for Argon2id. Never throws. */
 export async function startNative(): Promise<boolean> {
   nativeOk = false;
@@ -193,14 +212,15 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
+    diag.argon2Engine = await readArgon2Engine();
     void checkV2();
   } catch (e) {
     // First line only (a native failure carries a whole Java stack trace), long enough to name the exception.
     why = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
   }
-  diag.engine = nativeOk ? "native (Kotlin Argon2id)" : "not in this build (JS crypto only)";
+  diag.engine = nativeOk ? "native (" + diag.argon2Engine + ")" : "not in this build (JS crypto only)";
   setArgon2Offload(nativeOk ? nativeArgon2Tracked : null);
-  diag.installed["native crypto"] = nativeOk ? "ok (Kotlin Argon2id, self-checked)" : "not used - JS crypto (" + why + ")";
+  diag.installed["native crypto"] = nativeOk ? "ok (Argon2id: " + diag.argon2Engine + ", self-checked)" : "not used - JS crypto (" + why + ")";
   return nativeOk;
 }
 

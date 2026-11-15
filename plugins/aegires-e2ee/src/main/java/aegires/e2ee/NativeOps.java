@@ -21,9 +21,16 @@ public final class NativeOps {
         if (t < 1 || t > 16) throw new IllegalArgumentException("passes");
         if (m < 8 || m > MAX_MEMORY_KIB) throw new IllegalArgumentException("memory");
         if (len < 4 || len > 1024) throw new IllegalArgumentException("outLen");
-        byte[] out = Argon2id.hash(password, salt, t, m, len);
+        // C library when it is loaded and passed its check, otherwise the Java code (same bytes).
+        byte[] out = NativeArgon2.hash(password, salt, t, m, len);
+        if (out == null) out = Argon2id.hash(password, salt, t, m, len);
         java.util.Arrays.fill(password, (byte) 0);
         return encode(out);
+    }
+
+    /** "c:<abi>" when Argon2id runs in the C library, otherwise "java:<why not>". */
+    public static String argon2Engine() {
+        return NativeArgon2.status();
     }
 
     // ---- Aegires v2 messages (Crypto.java, copied from Aegires) ----------------------------------

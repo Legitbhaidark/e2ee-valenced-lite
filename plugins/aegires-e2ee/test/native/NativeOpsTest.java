@@ -11,9 +11,9 @@ import java.util.Base64;
  *   javac -d /tmp/an src/main/java/aegires/e2ee/*.java test/native/NativeOpsTest.java && java -cp /tmp/an NativeOpsTest
  */
 public class NativeOpsTest {
-    record Case(String name, String pwB64, String saltB64, int t, int mKiB, int len, String expectedHex) {}
+    public record Case(String name, String pwB64, String saltB64, int t, int mKiB, int len, String expectedHex) {}
 
-    static final Case[] CASES = {
+    public static final Case[] CASES = {
         new Case("small, 3 passes", "Y29ycmVjdCBob3JzZQ==", "ZGNlbmMyfHVzZXIta2V5fHYx", 3, 1024, 32, "cf3f019e5f1dfc71614a559a339682b69ed4084f7d87aa1534a2305e7d54cf72"),
         new Case("unicode password (NFKC)", "cMOkc3N3w7ZyZOKckyBmaQ==", "ZGNlbmMyfGN0eHxmb3JjZWR8MTIzNDU2Nzg5MDEyMzQ1Njc4", 3, 512, 32, "fb9757d1e3c2abc57d3f4ff5499fff88d20d1e5e96230167214f0d4e0a06b584"),
         new Case("1 pass, 64-byte output", "eA==", "c2FsdHNhbHRzYWx0", 1, 64, 64, "c88424fc70ca5f656e5f73335e0921b5e37ae43b552b4bdc354979bfe4454019dd82618af7cd8fd59be8315d334731c35bbac01f9f17372506d2426bac465654"),
@@ -21,7 +21,7 @@ public class NativeOpsTest {
         new Case("real parameters 64 MiB", "bXkgcmVhbCBwYXNzcGhyYXNl", "ZGNlbmMyfHVzZXIta2V5fHYx", 3, 65536, 32, "26e5bedd20ffad0d008e27362d6ee88a7ae5ae158fdf8f29e72093c4edcb2adf"),
     };
 
-    static String hex(byte[] b) {
+    public static String hex(byte[] b) {
         StringBuilder sb = new StringBuilder();
         for (byte x : b) sb.append(String.format("%02x", x));
         return sb.toString();

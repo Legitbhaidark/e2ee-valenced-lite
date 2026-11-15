@@ -24,6 +24,7 @@ export const diag = {
   engineJobs: 0, // operations done by the engine
   engineFallbacks: 0, // operations that fell back to the JS code
   engineLastError: "",
+  argon2Engine: "", // which Argon2id the native half runs: "C library (arm64-v8a)" or "Java"
 };
 
 export function diagLines(): string[] {
