@@ -8,7 +8,7 @@
       "description": "Encrypt and decrypt Discord messages with a shared passphrase. Compatible with the Aegires Android client. Text messages only for now: attachments are blocked in encrypted chats. Includes a native module that speeds up key derivation.",
       "author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
       "channels": {
-        "latest": "0.1.5"
+        "latest": "0.1.6"
       },
       "versions": {
         "0.1.0": {
@@ -80,6 +80,19 @@
           "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.5.zip",
           "sha256": "30e15ada87d323fea41191a494d45ba26faff5ad7977bbba213b07f951e3a30d",
           "size": 39250,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.1.6": {
+          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.6.zip",
+          "sha256": "e28a8fa7ee9e08c81b2c7428daa303ae275b85e385980c7af49ea4f01116c24d",
+          "size": 47977,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
