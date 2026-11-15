@@ -13,5 +13,3 @@ node_modules/
 .DS_Store
 .idea/
 *.iml
-package-lock.json
-*.tar.gz
