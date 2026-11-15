@@ -26,19 +26,29 @@ const strippedFields: string[] = [];
 const note = (msg: string) => { diag.installed["header lock"] = msg; };
 const status = (extra = "") => note([routes || "no route yet", marked ? `marked ${marked} rows` : "", strippedFields.length ? "front lock removed from: " + strippedFields.join(",") : "", shape, extra].filter(Boolean).join(" | "));
 
-/** Removes a leading lock from the text fields of a row's message. True if anything changed. */
-function stripTextLock(msg: any): boolean {
+/**
+ * Removes a leading lock from every text value of a row (at any depth), except the time itself.
+ * Discord's native rows keep message text in nested nodes, so this walks the whole row. The paths
+ * where a lock was found are shown in Diagnostics. True if anything changed.
+ */
+function stripTextLock(node: any, path = "row", depth = 0): boolean {
+  if (!node || typeof node !== "object" || depth > 8) return false;
   let changed = false;
-  for (const k of Object.keys(msg)) {
+  for (const k of Object.keys(node)) {
     if (k === "timestamp" || k === "timestampText") continue;
-    const v = msg[k];
-    if (typeof v === "string" && v.startsWith(LOCK)) {
-      msg[k] = v.slice(LOCK.length);
-      changed = true;
-      if (!strippedFields.includes(k) && strippedFields.length < 4) {
-        strippedFields.push(k);
-        status();
+    const v = node[k];
+    if (typeof v === "string") {
+      if (v.startsWith(LOCK)) {
+        node[k] = v.slice(LOCK.length);
+        changed = true;
+        const where = (path + "." + k).replace(/\.\d+/g, "[]");
+        if (!strippedFields.includes(where) && strippedFields.length < 4) {
+          strippedFields.push(where);
+          status();
+        }
       }
+    } else if (v && typeof v === "object") {
+      if (stripTextLock(v, path + "." + k, depth + 1)) changed = true;
     }
   }
   return changed;
@@ -51,7 +61,7 @@ function mark(row: any): boolean {
   const id = msg.id;
   if ((typeof id !== "string" && typeof id !== "number") || !wasEncrypted(String(id))) return false;
   if (!shape) {
-    shape = "row.message keys: " + Object.keys(msg).slice(0, 16).join(",");
+    shape = "row keys: " + Object.keys(row).slice(0, 12).join(",") + " | message keys: " + Object.keys(msg).slice(0, 40).join(",");
     status();
   }
   for (const k of ["timestamp", "timestampText"]) {
@@ -59,11 +69,11 @@ function mark(row: any): boolean {
     if (typeof t === "string") {
       // The lock now lives next to the time, so remove any lock left in front of the text. Messages
       // decrypted before this hook was ready (or while it was off) carry one in their cached content.
-      const stripped = stripTextLock(msg);
+      const stripped = stripTextLock(row);
       if (t.startsWith(LOCK)) return stripped;
       msg[k] = LOCK + t;
       marked++;
-      if (marked === 1) status();
+      if (marked === 1 || marked % 20 === 0) status();
       return true;
     }
   }
