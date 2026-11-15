@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "name": "Dark's Plugins",
+  "description": "Aegires E2EE for Valenced",
+  "plugins": {
+    "io.github.system32crowdstrikewin11.aegires-e2ee": {
+      "name": "Aegires E2EE",
+      "description": "Encrypt and decrypt Discord messages with a shared passphrase. Compatible with the Aegires Android client. Text messages only for now: attachments are blocked in encrypted chats. Includes a native module that speeds up key derivation.",
+      "author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
+      "channels": {
+        "latest": "0.1.0"
+      },
+      "versions": {
+        "0.1.0": {
+          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.0.zip",
+          "sha256": "89a97d03dd086a6b432aef53506655dc2fe120dc4ed14bad3daeaef95ff185d6",
+          "size": 32613,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    }
+  }
+}
