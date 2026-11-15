@@ -7,7 +7,7 @@ import { deriveKey } from "./crypto/keys.ts";
 import { decryptBytes, decryptText, encryptBytes, encryptText } from "./crypto/wire.ts";
 import { decryptFile, decryptMessage, encryptFile, encryptMessage, messagePreset, presetFromIndex } from "./crypto/v2.ts";
 import { deriveMasterKey } from "./crypto/kdf2.ts";
-import { nativeAesBench, nativeBench, nativeHkdfBench } from "./engine/engine.ts";
+import { nativeAesBench, nativeBench, nativeHkdfBench, nativeReady } from "./engine/engine.ts";
 import { diag } from "./diag.ts";
 import { fromHex, toHex } from "./crypto/hex.ts";
 import { hasSecureRandom } from "./crypto/random.ts";
@@ -105,13 +105,32 @@ const oneLine = (e: unknown): string => String((e as any)?.message ?? e).split("
 const yieldUi = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 type Timing = { ms: number; head: string };
+type Row = { id: "js" | "java" | "c"; name: string; run: (() => Promise<Timing>) | null; skip?: string };
+
+let benchRunning = false;
 
 /**
  * Crypto benchmark in three sections: Argon2id, HKDF-SHA256 and AES-256-GCM, each on plain JS,
  * Kotlin/Java and the C library. Native results are the median of 3 runs, timed inside the native half.
- * `lines` is called as results arrive, so the screen fills in. Plain JS only runs when asked (slow).
+ * An engine that cannot run here (no native half, no C library, JS not asked for) is skipped with the
+ * reason shown, and the remaining tests still run. `lines` is called as results arrive.
  */
 export async function benchCrypto(
+  memMiB: number,
+  includeJs: boolean,
+  lines: (l: string[]) => void,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
+  if (benchRunning) return; // one run at a time, so two runs can never write into the same list
+  benchRunning = true;
+  try {
+    await benchCryptoRun(memMiB, includeJs, lines, onProgress);
+  } finally {
+    benchRunning = false;
+  }
+}
+
+async function benchCryptoRun(
   memMiB: number,
   includeJs: boolean,
   lines: (l: string[]) => void,
@@ -120,101 +139,105 @@ export async function benchCrypto(
   const HKDF_N = 2000;
   const AES_N = 150;
   const out: string[] = [];
-  const push = (l: string) => { out.push(l); lines(out.slice()); };
+  const push = (l: string): number => { out.push(l); lines(out.slice()); return out.length - 1; };
   const set = (i: number, l: string) => { out[i] = l; lines(out.slice()); };
   const enc = (t: string) => new TextEncoder().encode(t);
-  const got: Record<string, boolean> = {};
+  const cWorked: Record<string, boolean> = {};
 
-  // One section: runs js / java / c in turn and prints "Name: time (match) xN" lines.
-  const section = async (
-    title: string,
-    js: (() => Promise<Timing>) | null,
-    java: () => Promise<Timing>,
-    c: (() => Promise<Timing>) | null,
-    javaName: string,
-    key: string,
-  ) => {
+  // What can run on this phone right now, decided once so unavailable engines are skipped, not attempted.
+  const nativeUp = nativeReady();
+  const cUp = nativeUp && String(diag.argon2Engine).startsWith("C library");
+  const noNative = "native half not installed";
+  const noC = "C library not loaded" + (diag.argon2Engine ? ": " + diag.argon2Engine : "");
+
+  const section = async (key: string, title: string, rows: Row[], noteC?: string) => {
     if (out.length) push("");
     push(title);
-    const res: Record<string, Timing | null> = { js: null, java: null, c: null };
-    const row = async (id: string, name: string, fn: () => Promise<Timing>) => {
-      push("  " + name + ": running...");
-      const at = out.length - 1;
-      try {
-        res[id] = await fn();
-        set(at, "  " + name + ": " + fmtMs(res[id]!.ms));
-      } catch (e) {
-        set(at, "  " + name + ": not available (" + oneLine(e) + ")");
+    const at: Record<string, number> = {};
+    const res: Partial<Record<Row["id"], Timing>> = {};
+    for (const row of rows) {
+      if (!row.run) {
+        at[row.id] = push("  " + row.name + ": skipped (" + (row.skip ?? "not run") + ")");
+        continue;
       }
-    };
-    if (js) await row("js", "Plain JS", js);
-    await row("java", javaName, java);
-    if (c) await row("c", "Native", c);
-    else push("  Native: n/a (no C version, Java only)");
-    // Annotate: match / mismatch against the Java answer, and the speedups.
+      at[row.id] = push("  " + row.name + ": running...");
+      try {
+        res[row.id] = await row.run();
+        set(at[row.id], "  " + row.name + ": " + fmtMs(res[row.id]!.ms));
+      } catch (e) {
+        set(at[row.id], "  " + row.name + ": skipped (" + oneLine(e) + ")"); // never stops the other tests
+      }
+    }
+    if (noteC) push("  Native: n/a (" + noteC + ")");
+    // Final text per row: answer check against Java (or the first engine that ran), and the speedups.
     const ref = res.java ?? res.c ?? res.js;
-    const idx = (name: string) => out.findIndex((l, i) => l.startsWith("  " + name + ":") && i >= out.length - 6);
-    const tag = (id: string, name: string, extra: string) => {
+    const name = (id: Row["id"]) => rows.find((r) => r.id === id)!.name;
+    const done = (id: Row["id"], extra: string) => {
       const r = res[id];
-      const i = idx(name);
-      if (!r || i < 0) return;
-      const same = ref ? r.head === ref.head : true;
-      set(i, out[i] + (same ? " (match)" : " (MISMATCH!)") + extra);
+      if (!r || !ref) return;
+      set(at[id], "  " + name(id) + ": " + fmtMs(r.ms) + (r.head === ref.head ? " (match)" : " (MISMATCH!)") + extra);
     };
-    tag("js", "Plain JS", "");
-    tag("java", javaName, res.js ? "  x" + (res.js.ms / res.java!.ms).toFixed(res.js.ms / res.java!.ms >= 100 ? 0 : 1) + " vs JS" : "");
-    tag("c", "Native", res.java ? "  x" + (res.java.ms / res.c!.ms).toFixed(2) : "");
-    got[key + "-c"] = !!res.c;
+    const times = (a: number, b: number) => "x" + (a / b).toFixed(a / b >= 100 ? 0 : a / b >= 10 ? 1 : 2);
+    done("js", "");
+    done("java", res.js && res.java ? "  " + times(res.js.ms, res.java.ms) + " vs JS" : "");
+    done("c", res.java && res.c ? "  " + times(res.java.ms, res.c.ms) + " vs Java" : "");
+    cWorked[key] = !!res.c;
   };
+
+  const jsSkip = includeJs ? undefined : "plain JS is off";
+  const jsRow = (run: () => Promise<Timing>): Pick<Row, "run" | "skip"> => (includeJs ? { run } : { run: null, skip: jsSkip });
+  const nativeRow = (ok: boolean, why: string, run: () => Promise<Timing>): Pick<Row, "run" | "skip"> => (ok ? { run } : { run: null, skip: why });
 
   // ---- Argon2id (3 passes, memMiB, 32 bytes) ----
   const mKiB = memMiB * 1024;
-  await section(
-    `Argon2id (3, ${memMiB} MiB, 32B)`,
-    includeJs
-      ? async () => {
-          const { argon2id } = await import("./crypto/argon2.ts");
-          const t0 = nowMs();
-          const key = await argon2id(enc("benchmark-password"), enc("dcenc2|bench|v1"), { t: 3, m: mKiB, dkLen: 32, onProgress });
-          return { ms: nowMs() - t0, head: hexOf(key) };
-        }
-      : null,
-    async () => { const r = await nativeBench("java", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; },
-    async () => { const r = await nativeBench("c", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; },
-    "Java",
-    "argon",
-  );
+  await section("argon", `Argon2id (3, ${memMiB} MiB, 32B)`, [
+    {
+      id: "js",
+      name: "Plain JS",
+      ...jsRow(async () => {
+        const { argon2id } = await import("./crypto/argon2.ts");
+        const t0 = nowMs();
+        const key = await argon2id(enc("benchmark-password"), enc("dcenc2|bench|v1"), { t: 3, m: mKiB, dkLen: 32, onProgress });
+        return { ms: nowMs() - t0, head: hexOf(key) };
+      }),
+    },
+    { id: "java", name: "Java", ...nativeRow(nativeUp, noNative, async () => { const r = await nativeBench("java", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; }) },
+    { id: "c", name: "Native", ...nativeRow(cUp, noC, async () => { const r = await nativeBench("c", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; }) },
+  ]);
 
   // ---- HKDF-SHA256 extract+expand x2000 (44 bytes out, like an AES-256 key + nonce) ----
-  await section(
-    `HKDF-SHA256 extract+expand x${HKDF_N}`,
-    includeJs
-      ? async () => {
-          const { hkdf } = await import("@noble/hashes/hkdf");
-          const { sha256 } = await import("@noble/hashes/sha256");
-          const ikm = new Uint8Array(32), salt = new Uint8Array(16);
-          for (let i = 0; i < 32; i++) { ikm[i] = (i * 3 + 7) & 255; if (i < 16) salt[i] = i + 1; }
-          const info = enc("aegires|bench|hkdf");
-          let last = new Uint8Array(0);
-          const t0 = nowMs();
-          for (let k = 0; k < HKDF_N; k++) {
-            last = hkdf(sha256, ikm, salt, info, 44);
-            if (k % 200 === 199) { onProgress?.((k + 1) / HKDF_N); await yieldUi(); }
-          }
-          return { ms: nowMs() - t0, head: hexOf(last) };
+  await section("hkdf", `HKDF-SHA256 extract+expand x${HKDF_N}`, [
+    {
+      id: "js",
+      name: "Plain JS",
+      ...jsRow(async () => {
+        const { hkdf } = await import("@noble/hashes/hkdf");
+        const { sha256 } = await import("@noble/hashes/sha256");
+        const ikm = new Uint8Array(32), salt = new Uint8Array(16);
+        for (let i = 0; i < 32; i++) { ikm[i] = (i * 3 + 7) & 255; if (i < 16) salt[i] = i + 1; }
+        const info = enc("aegires|bench|hkdf");
+        let last = new Uint8Array(0);
+        const t0 = nowMs();
+        for (let k = 0; k < HKDF_N; k++) {
+          last = hkdf(sha256, ikm, salt, info, 44);
+          if (k % 200 === 199) { onProgress?.((k + 1) / HKDF_N); await yieldUi(); }
         }
-      : null,
-    async () => { const r = await nativeHkdfBench("java", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; },
-    async () => { const r = await nativeHkdfBench("c", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; },
-    "Java",
-    "hkdf",
-  );
+        return { ms: nowMs() - t0, head: hexOf(last) };
+      }),
+    },
+    { id: "java", name: "Java", ...nativeRow(nativeUp, noNative, async () => { const r = await nativeHkdfBench("java", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; }) },
+    { id: "c", name: "Native", ...nativeRow(cUp, noC, async () => { const r = await nativeHkdfBench("c", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; }) },
+  ]);
 
-  // ---- AES-256-GCM, 64 KiB encrypt + decrypt x150 ----
+  // ---- AES-256-GCM, 64 KiB encrypt + decrypt x150 (there is no C AES: Java only) ----
   await section(
+    "aes",
     `AES-256-GCM 64KiB enc+dec x${AES_N}`,
-    includeJs
-      ? async () => {
+    [
+      {
+        id: "js",
+        name: "Plain JS",
+        ...jsRow(async () => {
           const { gcmOpen, gcmSeal } = await import("./crypto/aead.ts");
           const key = new Uint8Array(32), plain = new Uint8Array(64 * 1024);
           for (let i = 0; i < 32; i++) key[i] = (i * 11 + 5) & 255;
@@ -230,15 +253,14 @@ export async function benchCrypto(
           }
           const ms = nowMs() - t0;
           return { ms, head: hexOf(gcmSeal(key, new Uint8Array(12), aad, plain, 16)) };
-        }
-      : null,
-    async () => { const r = await nativeAesBench(AES_N, 3); return { ms: median(r.ms), head: r.head }; },
-    null,
-    "Java/Conscrypt",
-    "aes",
+        }),
+      },
+      { id: "java", name: "Java/Conscrypt", ...nativeRow(nativeUp, noNative, async () => { const r = await nativeAesBench(AES_N, 3); return { ms: median(r.ms), head: r.head }; }) },
+    ],
+    "no C version, Java only",
   );
 
   push("");
-  const abi = diag.argon2Engine || "unknown";
-  push("Native: " + abi + " | Argon2id=" + (got["argon-c"] ? "native" : "Java") + " HKDF=" + (got["hkdf-c"] ? "native" : "Java") + " AES=Java");
+  const abi = nativeUp ? (diag.argon2Engine || "unknown") : "native half not installed";
+  push("Native: " + abi + " | Argon2id=" + (cWorked.argon ? "native" : "Java") + " HKDF=" + (cWorked.hkdf ? "native" : "Java") + " AES=Java");
 }
