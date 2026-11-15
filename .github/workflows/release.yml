@@ -3,9 +3,11 @@
 
 name: Release plugins
 
+# main publishes releases (plain versions, the "latest" channel). dev publishes dev builds
+# (versions like 1.2.3-dev.4, built with -Pdev, which Valenced puts on the "beta" channel).
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 concurrency:
@@ -42,13 +44,16 @@ jobs:
       - name: Check out the published pool
         run: .github/scripts/checkout-pool.sh
 
+      - name: Check the version matches this branch
+        run: .github/scripts/check-channel.sh
+
       - name: Plan releases
         id: plan
         run: .github/scripts/plan-releases.sh
 
       - name: Build plugins
         if: steps.plan.outputs.count != '0'
-        run: ./gradlew --no-daemon packageAllPlugins
+        run: ./gradlew --no-daemon packageAllPlugins ${{ github.ref_name == 'dev' && '-Pdev' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN }} # For Gradle to download the API dependency.
 

@@ -18,7 +18,6 @@ import {
   removeChannelConfig,
   setChannelEnabled,
   setChannelPassword,
-  setDeveloperMode,
   setGlobalPassword,
   setPreset,
 } from "../state.ts";
@@ -29,7 +28,7 @@ import { benchCrypto, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
 import { getKdfOverride } from "../crypto/kdf2.ts";
 import { diag, diagLines } from "../diag.ts";
 import { EngineHost } from "../engine/engine.ts";
-import { BUILD_NUMBER, DEVELOPER, PLUGIN_VERSION } from "../about.ts";
+import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "../about.ts";
 
 // React Native binds after this script is evaluated, so each primitive is resolved at render time.
 const lazy = (names: string[], fallback?: () => any) => (props: any) => {
@@ -141,21 +140,6 @@ function SettingsInner() {
   const [kdfPasses, setKdfPasses] = React.useState(String(storage.devKdfPasses ?? 3));
   const [pct, setPct] = React.useState(-1); // Argon2id progress, -1 = idle
   const onProgress = (f: number) => setPct(Math.round(f * 100));
-  const [buildTaps, setBuildTaps] = React.useState({ n: 0, t: 0 });
-  const tapBuild = () => {
-    if (storage.devMode) return showToast("Developer options are already on");
-    const now = Date.now();
-    const n = now - buildTaps.t > 3000 ? 1 : buildTaps.n + 1; // taps must follow each other quickly
-    if (n >= 5) {
-      setBuildTaps({ n: 0, t: 0 });
-      setDeveloperMode(true);
-      showToast("Developer options enabled");
-      refresh();
-    } else {
-      setBuildTaps({ n, t: now });
-      if (n >= 2) showToast((5 - n) + " more " + (5 - n === 1 ? "tap" : "taps") + " to enable developer options");
-    }
-  };
   const busyLabel = (what: string) => what + (pct >= 0 ? ` ${pct}%` : "...");
 
   // Run a slow async action with a busy flag, and report failures instead of crashing.
@@ -186,7 +170,7 @@ function SettingsInner() {
         <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>3. Chat normally</Text>
         <Text style={{ color: C.muted, marginTop: 2 }}>Your messages go out encrypted (they look like a § and random text). Messages from others are decrypted for you, with a lock next to the time. Images, GIFs and videos work too: tap a decrypted video to play it. Turn on "Attachments" in Behaviour to encrypt files you send.</Text>
         <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>Other things</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>A different password for one chat: use "Per-chat key / switch". Built-in Aegires channels are always encrypted. If something looks wrong, run the Self-test, then read Diagnostics. Tap the build number five times to unlock developer options.</Text>
+        <Text style={{ color: C.muted, marginTop: 2 }}>A different password for one chat: use "Per-chat key / switch". Built-in Aegires channels are always encrypted. {DEV_BUILD ? "This is a dev build: Diagnostics, Self-test, Crypto benchmark and Developer options are further down." : "If something looks wrong, check that everyone uses the same password and that encryption is on here (/e2ee status)."}</Text>
       </Card>
 
       <Card
@@ -234,7 +218,7 @@ function SettingsInner() {
         <ToggleRow label="Encrypt outgoing messages by default (in chats without their own on/off setting)" value={!!storage.encryptByDefault} onChange={(v) => { storage.encryptByDefault = v; refresh(); }} />
         <ToggleRow label="Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
         <ToggleRow label="Show a lock icon next to the time of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
-        <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} />
+        {DEV_BUILD ? <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} /> : null}
       </Card>
 
       <Card title="Per-chat key / switch" hint="Channel ID is pre-filled with the chat you had open. Leave the password empty to only change on/off.">
@@ -261,6 +245,7 @@ function SettingsInner() {
         ))}
       </Card>
 
+      {DEV_BUILD ? (
       <Card title="Diagnostics" hint="What the hooks are doing right now. Press Refresh after sending / receiving a message.">
         <Button label="Refresh" onPress={() => refresh()} />
         <Text selectable style={{ color: C.text, marginTop: 8, fontFamily: "monospace", fontSize: 12 }}>
@@ -268,6 +253,9 @@ function SettingsInner() {
         </Text>
       </Card>
 
+      ) : null}
+
+      {DEV_BUILD ? (
       <Card title="Self-test" hint="Run this first. It checks Discord has a secure random source and that this phone can decrypt messages made by the real Aegires code.">
         <Button
           label={busy ? "Running..." : "Run self-test"}
@@ -298,6 +286,9 @@ function SettingsInner() {
         ))}
       </Card>
 
+      ) : null}
+
+      {DEV_BUILD ? (
       <Card
         title="Crypto benchmark"
         hint="Times Argon2id, HKDF-SHA256 and AES-256-GCM on plain JS, Kotlin/Java and the C library. Native results are the median of 3 runs, timed inside the native half. The size below is for Argon2id. Plain JS is slow (about 0.6 s per MiB for Argon2id, and the AES test takes a while), so it is off by default."
@@ -323,18 +314,18 @@ function SettingsInner() {
         ))}
       </Card>
 
+      ) : null}
+
       <Card title="Plugin versions">
         <Text style={{ color: C.text, marginTop: 8 }}>{"Developer: " + DEVELOPER}</Text>
         <Text style={{ color: C.text, marginTop: 4 }}>{"Version: " + PLUGIN_VERSION}</Text>
-        <Touch onPress={tapBuild} style={{ marginTop: 4 }}>
-          <Text style={{ color: C.text }}>{"Build number: " + BUILD_NUMBER}</Text>
-        </Touch>
+        <Text style={{ color: C.text, marginTop: 4 }}>{"Build number: " + BUILD_ID}</Text>
         <Text style={{ color: C.muted, marginTop: 8 }}>{"Message format: Aegires v2 (v1 read-only)"}</Text>
         <Text style={{ color: C.muted, marginTop: 4 }}>{"File format: Aegires v3"}</Text>
         <Text style={{ color: C.muted, marginTop: 4 }}>{"Native module: " + (diag.installed["native crypto"] ?? "not started")}</Text>
       </Card>
 
-      {storage.devMode ? (
+      {DEV_BUILD ? (
         <Card title="Developer options" hint="For testing only. These options make the client less secure.">
           <ToggleRow
             label="Use the v1 legacy format for sending (AES-256-GCM, PBKDF2). Older and less secure; only for talking to old Aegires versions"
@@ -388,7 +379,6 @@ function SettingsInner() {
               refresh();
             }}
           />
-          <Button label="Turn developer options off" danger onPress={() => { setDeveloperMode(false); showToast("Developer options off"); refresh(); }} />
         </Card>
       ) : null}
     </ScrollView>

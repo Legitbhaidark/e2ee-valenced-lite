@@ -7,6 +7,7 @@
 // One password gives both keys. They are derived ONCE when you type the password and only the
 // derived keys are stored (hex); the password itself is never saved. The derived keys are still
 // secrets: anyone who can read this plugin's storage can read your chats.
+import { DEV_BUILD } from "./about.ts";
 import { storage } from "./storage.ts";
 import { deriveKey } from "./crypto/keys.ts";
 import { deriveMasterKey, setArgonEngine, setKdfOverride, type ArgonEngine } from "./crypto/kdf2.ts";
@@ -27,7 +28,7 @@ export function initStorage(): void {
   storage.globalKeyHex ??= "";
   storage.keyV2 ??= "";
   storage.format ??= "v2";
-  storage.devMode ??= false; // developer options (unlocked by tapping the build number 5 times)
+  storage.devMode = DEV_BUILD; // developer options: always on in dev builds, never in release builds
   storage.devShortPw ??= false; // developer option: allow 1-character passwords
   storage.devKdfOn ??= false; // developer option: custom Argon2id passes / memory (keys no longer match other clients)
   storage.devKdfMemMiB ??= 64;
@@ -41,6 +42,13 @@ export function initStorage(): void {
   storage.showLock ??= true;
   storage.attachmentsExp ??= false; // experimental encrypted attachments, opt-in
   storage.debug ??= false;
+  if (!DEV_BUILD) {
+    // A release build ignores everything the developer options set (e.g. left over from a dev build).
+    storage.devShortPw = false;
+    storage.devKdfOn = false;
+    storage.devArgonEngine = "auto";
+    storage.debug = false;
+  }
   applyDevKdf();
 }
 
@@ -176,18 +184,6 @@ export function minPasswordLength(): number {
 export function passwordRule(): string {
   const n = minPasswordLength();
   return n + (n === 1 ? " character" : " characters");
-}
-
-/** Turns developer options on or off. Turning them off also switches off everything they unlocked. */
-export function setDeveloperMode(on: boolean): void {
-  storage.devMode = on;
-  if (!on) {
-    storage.devShortPw = false;
-    storage.devKdfOn = false;
-    storage.devArgonEngine = "auto";
-    if (storage.format === "v1") storage.format = "v2";
-  }
-  applyDevKdf();
 }
 
 /** Same limits as the Aegires app (unless the developer option for short passwords is on). */
