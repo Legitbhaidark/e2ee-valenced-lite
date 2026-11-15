@@ -59,6 +59,104 @@ public final class NativeOps {
         return hex + ";" + times;
     }
 
+    // ---- benchmarks for HKDF and AES-GCM (timed here, so the bridge is not in the numbers) ----------
+
+    /** HKDF-SHA256 with javax.crypto HMAC, extract+expand repeated `iterations` times; returns the last output. */
+    public static byte[] hkdfJava(byte[] salt, byte[] ikm, byte[] info, int len, int iterations) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            byte[] okm = new byte[len];
+            for (int k = 0; k < iterations; k++) {
+                mac.init(new javax.crypto.spec.SecretKeySpec(salt.length == 0 ? new byte[32] : salt, "HmacSHA256"));
+                byte[] prk = mac.doFinal(ikm);
+                mac.init(new javax.crypto.spec.SecretKeySpec(prk, "HmacSHA256"));
+                byte[] t = new byte[0];
+                int pos = 0;
+                for (int ctr = 1; pos < len; ctr++) {
+                    mac.update(t);
+                    mac.update(info);
+                    mac.update((byte) ctr);
+                    t = mac.doFinal();
+                    int n = Math.min(32, len - pos);
+                    System.arraycopy(t, 0, okm, pos, n);
+                    pos += n;
+                }
+            }
+            return okm;
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String headHex(byte[] b) {
+        StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < 8 && i < b.length; i++) {
+            hex.append(Character.forDigit((b[i] >> 4) & 15, 16)).append(Character.forDigit(b[i] & 15, 16));
+        }
+        return hex.toString();
+    }
+
+    /** "<first 8 output bytes hex>;<ns run 1>,<ns run 2>,..." for `iterations` x (extract+expand to 44 bytes). */
+    public static String hkdfBench(String engine, String iterationsStr, String runsStr) {
+        int iterations = Math.max(1, Math.min(100000, Integer.parseInt(iterationsStr)));
+        int runs = Math.max(1, Math.min(10, Integer.parseInt(runsStr)));
+        byte[] salt = new byte[16], ikm = new byte[32], info = "aegires|bench|hkdf".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (int i = 0; i < 32; i++) { ikm[i] = (byte) (i * 3 + 7); if (i < 16) salt[i] = (byte) (i + 1); }
+        boolean c = "c".equals(engine);
+        if (c && !NativeArgon2.isHkdfReady()) throw new IllegalStateException("C HKDF not available: " + NativeArgon2.status());
+        byte[] out = null;
+        StringBuilder times = new StringBuilder();
+        for (int r = 0; r < runs; r++) {
+            long t0 = System.nanoTime();
+            out = c ? NativeArgon2.hkdf(salt, ikm, info, 44, iterations) : hkdfJava(salt, ikm, info, 44, iterations);
+            long ns = System.nanoTime() - t0;
+            if (out == null) throw new IllegalStateException("C HKDF failed");
+            if (r > 0) times.append(',');
+            times.append(ns);
+        }
+        return headHex(out) + ";" + times;
+    }
+
+    /**
+     * AES-256-GCM, `iterations` x (encrypt + decrypt 64 KiB) with javax.crypto (Conscrypt on Android).
+     * There is no C AES, so this engine is Java only. Same return format as the other benchmarks;
+     * the "hash" is the head of a ciphertext made with a fixed nonce, so JS can compare it.
+     */
+    public static String aesBench(String iterationsStr, String runsStr) {
+        int iterations = Math.max(1, Math.min(10000, Integer.parseInt(iterationsStr)));
+        int runs = Math.max(1, Math.min(10, Integer.parseInt(runsStr)));
+        try {
+            byte[] key = new byte[32], plain = new byte[64 * 1024];
+            for (int i = 0; i < 32; i++) key[i] = (byte) (i * 11 + 5);
+            for (int i = 0; i < plain.length; i++) plain[i] = (byte) (i * 31 + (i >> 8));
+            javax.crypto.SecretKey sk = new javax.crypto.spec.SecretKeySpec(key, "AES");
+            javax.crypto.Cipher enc = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            javax.crypto.Cipher dec = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            int counter = 0;
+            StringBuilder times = new StringBuilder();
+            for (int r = 0; r < runs; r++) {
+                long t0 = System.nanoTime();
+                for (int k = 0; k < iterations; k++) {
+                    byte[] iv = new byte[12];
+                    iv[0] = (byte) k; iv[1] = (byte) (k >> 8); iv[2] = (byte) (counter++); // a fresh nonce per operation
+                    enc.init(javax.crypto.Cipher.ENCRYPT_MODE, sk, new javax.crypto.spec.GCMParameterSpec(128, iv));
+                    byte[] ct = enc.doFinal(plain);
+                    dec.init(javax.crypto.Cipher.DECRYPT_MODE, sk, new javax.crypto.spec.GCMParameterSpec(128, iv));
+                    byte[] back = dec.doFinal(ct);
+                    if (back.length != plain.length || back[777] != plain[777]) throw new IllegalStateException("AES round trip failed");
+                }
+                long ns = System.nanoTime() - t0;
+                if (r > 0) times.append(',');
+                times.append(ns);
+            }
+            // Fixed nonce, outside the timing: the same input JS encrypts, so the two engines can be compared.
+            enc.init(javax.crypto.Cipher.ENCRYPT_MODE, sk, new javax.crypto.spec.GCMParameterSpec(128, new byte[12]));
+            return headHex(enc.doFinal(plain)) + ";" + times;
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private static void checkParams(int t, int m, int len) {
         if (t < 1 || t > 16) throw new IllegalArgumentException("passes");
         if (m < 8 || m > MAX_MEMORY_KIB) throw new IllegalArgumentException("memory");

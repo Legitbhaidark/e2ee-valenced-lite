@@ -59,16 +59,27 @@ async function nativeArgon2(password: Uint8Array, salt: Uint8Array, t: number, m
   return typeof out === "string" ? base64Decode(out) : null;
 }
 
-/**
- * Benchmark of one native engine ("c" or "java"): runs Argon2id `runs` times inside the native half
- * (timed there, so the bridge is not in the numbers). Returns the timings in ms and the first 8
- * output bytes (hex) so engines can be compared. Throws with the reason when the engine is not available.
- */
-export async function nativeBench(engine: "c" | "java", t: number, mKiB: number, runs: number): Promise<{ ms: number[]; head: string }> {
-  const out = await callNative("argon2bench", [engine, String(t), String(mKiB), String(runs)], 120000);
+/** "<hash head>;<ns>,<ns>,..." from the native half -> timings in ms and the first 8 output bytes (hex). */
+function parseBench(out: unknown): { ms: number[]; head: string } {
   if (typeof out !== "string" || out.indexOf(";") < 0) throw new Error("unexpected benchmark reply");
   const [head, times] = out.split(";");
   return { head, ms: times.split(",").map((n) => Number(n) / 1e6) };
+}
+
+/**
+ * Benchmarks of the native half. All are timed inside it (the bridge is not in the numbers) and throw
+ * with the reason when an engine is not available ("c" without the C library, or an old native half).
+ */
+export async function nativeBench(engine: "c" | "java", t: number, mKiB: number, runs: number): Promise<{ ms: number[]; head: string }> {
+  return parseBench(await callNative("argon2bench", [engine, String(t), String(mKiB), String(runs)], 120000));
+}
+
+export async function nativeHkdfBench(engine: "c" | "java", iterations: number, runs: number): Promise<{ ms: number[]; head: string }> {
+  return parseBench(await callNative("hkdfbench", [engine, String(iterations), String(runs)], 120000));
+}
+
+export async function nativeAesBench(iterations: number, runs: number): Promise<{ ms: number[]; head: string }> {
+  return parseBench(await callNative("aesbench", [String(iterations), String(runs)], 120000));
 }
 
 /** Real-size offload: records success or the exact failure in Diagnostics, then lets the JS code take over on failure. */

@@ -29,6 +29,9 @@ public final class NativeArgon2 {
     /** Returns null when the parameters are refused or memory cannot be allocated. */
     private static native byte[] hashNative(byte[] password, byte[] salt, int passes, int memoryKiB, int outLen);
 
+    /** HKDF-SHA256 extract+expand, repeated `iterations` times on the same input; returns the last output. */
+    private static native byte[] hkdfNative(byte[] salt, byte[] ikm, byte[] info, int len, int iterations);
+
     public static boolean isReady() {
         return ready;
     }
@@ -85,10 +88,12 @@ public final class NativeArgon2 {
                 return false;
             }
             abiUsed = abi;
+            hkdfReady = hkdfCheck(); // an old or wrong HKDF only switches HKDF off, Argon2id keeps using C
             ready = true;
             return true;
         } catch (Throwable t) {
             ready = false;
+            hkdfReady = false;
             reason = "C library not used (" + oneLine(t) + ")";
             return false;
         }
@@ -107,6 +112,40 @@ public final class NativeArgon2 {
             ready = false;
             reason = "C library switched off after an error (" + oneLine(t) + ")";
             return null;
+        }
+    }
+
+    private static volatile boolean hkdfReady;
+
+    /** True when the C HKDF is loaded and matched the Java HKDF (checked at load). */
+    public static boolean isHkdfReady() {
+        return ready && hkdfReady;
+    }
+
+    /** HKDF-SHA256 through the C library, or null when it is not usable (an error switches only HKDF off). */
+    public static byte[] hkdf(byte[] salt, byte[] ikm, byte[] info, int len, int iterations) {
+        if (!ready || !hkdfReady) return null;
+        try {
+            byte[] out = hkdfNative(salt, ikm, info, len, iterations);
+            return out != null && out.length == len ? out : null;
+        } catch (Throwable t) {
+            hkdfReady = false;
+            return null;
+        }
+    }
+
+    /** HKDF known-answer style check against the Java (javax.crypto) HKDF; false only switches C HKDF off. */
+    private static boolean hkdfCheck() {
+        try {
+            byte[] salt = new byte[16], ikm = new byte[32], info = "aegires|check".getBytes();
+            for (int i = 0; i < 32; i++) { ikm[i] = (byte) (i * 5 + 1); if (i < 16) salt[i] = (byte) (255 - i); }
+            int[] lens = {44, 32, 7, 100};
+            for (int len : lens) {
+                if (!Arrays.equals(NativeOps.hkdfJava(salt, ikm, info, len, 1), hkdfNative(salt, ikm, info, len, 1))) return false;
+            }
+            return Arrays.equals(NativeOps.hkdfJava(new byte[0], ikm, new byte[0], 44, 1), hkdfNative(new byte[0], ikm, new byte[0], 44, 1));
+        } catch (Throwable t) {
+            return false;
         }
     }
 

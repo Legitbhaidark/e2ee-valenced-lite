@@ -7,7 +7,8 @@ import { deriveKey } from "./crypto/keys.ts";
 import { decryptBytes, decryptText, encryptBytes, encryptText } from "./crypto/wire.ts";
 import { decryptFile, decryptMessage, encryptFile, encryptMessage, messagePreset, presetFromIndex } from "./crypto/v2.ts";
 import { deriveMasterKey } from "./crypto/kdf2.ts";
-import { nativeBench } from "./engine/engine.ts";
+import { nativeAesBench, nativeBench, nativeHkdfBench } from "./engine/engine.ts";
+import { diag } from "./diag.ts";
 import { fromHex, toHex } from "./crypto/hex.ts";
 import { hasSecureRandom } from "./crypto/random.ts";
 import { fileModule } from "./native.ts";
@@ -99,64 +100,145 @@ export function fmtMs(ms: number): string {
 
 const hexOf = (b: Uint8Array): string => Array.from(b.subarray(0, 8), (x) => x.toString(16).padStart(2, "0")).join("");
 const nowMs = (): number => (typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now());
-
 const median = (a: number[]): number => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
+const oneLine = (e: unknown): string => String((e as any)?.message ?? e).split("\n")[0].slice(0, 90);
+const yieldUi = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+type Timing = { ms: number; head: string };
 
 /**
- * Compares the three Argon2id engines on the same input: plain JS, Kotlin/Java and the C library
- * (the last two run in the native half and are timed there). `lines` is called after each engine
- * finishes so the screen fills in as results arrive.
+ * Crypto benchmark in three sections: Argon2id, HKDF-SHA256 and AES-256-GCM, each on plain JS,
+ * Kotlin/Java and the C library. Native results are the median of 3 runs, timed inside the native half.
+ * `lines` is called as results arrive, so the screen fills in. Plain JS only runs when asked (slow).
  */
-export async function benchArgon2(
+export async function benchCrypto(
   memMiB: number,
-  passes: number,
   includeJs: boolean,
   lines: (l: string[]) => void,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
+  const HKDF_N = 2000;
+  const AES_N = 150;
+  const out: string[] = [];
+  const push = (l: string) => { out.push(l); lines(out.slice()); };
+  const set = (i: number, l: string) => { out[i] = l; lines(out.slice()); };
+  const enc = (t: string) => new TextEncoder().encode(t);
+  const got: Record<string, boolean> = {};
+
+  // One section: runs js / java / c in turn and prints "Name: time (match) xN" lines.
+  const section = async (
+    title: string,
+    js: (() => Promise<Timing>) | null,
+    java: () => Promise<Timing>,
+    c: (() => Promise<Timing>) | null,
+    javaName: string,
+    key: string,
+  ) => {
+    if (out.length) push("");
+    push(title);
+    const res: Record<string, Timing | null> = { js: null, java: null, c: null };
+    const row = async (id: string, name: string, fn: () => Promise<Timing>) => {
+      push("  " + name + ": running...");
+      const at = out.length - 1;
+      try {
+        res[id] = await fn();
+        set(at, "  " + name + ": " + fmtMs(res[id]!.ms));
+      } catch (e) {
+        set(at, "  " + name + ": not available (" + oneLine(e) + ")");
+      }
+    };
+    if (js) await row("js", "Plain JS", js);
+    await row("java", javaName, java);
+    if (c) await row("c", "Native", c);
+    else push("  Native: n/a (no C version, Java only)");
+    // Annotate: match / mismatch against the Java answer, and the speedups.
+    const ref = res.java ?? res.c ?? res.js;
+    const idx = (name: string) => out.findIndex((l, i) => l.startsWith("  " + name + ":") && i >= out.length - 6);
+    const tag = (id: string, name: string, extra: string) => {
+      const r = res[id];
+      const i = idx(name);
+      if (!r || i < 0) return;
+      const same = ref ? r.head === ref.head : true;
+      set(i, out[i] + (same ? " (match)" : " (MISMATCH!)") + extra);
+    };
+    tag("js", "Plain JS", "");
+    tag("java", javaName, res.js ? "  x" + (res.js.ms / res.java!.ms).toFixed(res.js.ms / res.java!.ms >= 100 ? 0 : 1) + " vs JS" : "");
+    tag("c", "Native", res.java ? "  x" + (res.java.ms / res.c!.ms).toFixed(2) : "");
+    got[key + "-c"] = !!res.c;
+  };
+
+  // ---- Argon2id (3 passes, memMiB, 32 bytes) ----
   const mKiB = memMiB * 1024;
-  const out: string[] = [`Argon2id ${memMiB} MiB, ${passes} passes, 1 lane`];
-  const heads: Record<string, string> = {};
-  const times: Record<string, number> = {};
-  const label = (n: string) => (n + ":").padEnd(14);
-  lines(out.slice());
+  await section(
+    `Argon2id (3, ${memMiB} MiB, 32B)`,
+    includeJs
+      ? async () => {
+          const { argon2id } = await import("./crypto/argon2.ts");
+          const t0 = nowMs();
+          const key = await argon2id(enc("benchmark-password"), enc("dcenc2|bench|v1"), { t: 3, m: mKiB, dkLen: 32, onProgress });
+          return { ms: nowMs() - t0, head: hexOf(key) };
+        }
+      : null,
+    async () => { const r = await nativeBench("java", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; },
+    async () => { const r = await nativeBench("c", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; },
+    "Java",
+    "argon",
+  );
 
-  if (includeJs) {
-    out.push(label("Plain JS") + "running...");
-    lines(out.slice());
-    try {
-      const { argon2id } = await import("./crypto/argon2.ts");
-      const t0 = nowMs();
-      const key = await argon2id(new TextEncoder().encode("benchmark-password"), new TextEncoder().encode("dcenc2|bench|v1"), { t: passes, m: mKiB, dkLen: 32, onProgress });
-      times.js = nowMs() - t0;
-      heads.js = hexOf(key);
-      out[out.length - 1] = label("Plain JS") + fmtMs(times.js);
-    } catch (e) {
-      out[out.length - 1] = label("Plain JS") + "FAILED " + String((e as any)?.message ?? e).split("\n")[0].slice(0, 100);
-    }
-    lines(out.slice());
-  }
+  // ---- HKDF-SHA256 extract+expand x2000 (44 bytes out, like an AES-256 key + nonce) ----
+  await section(
+    `HKDF-SHA256 extract+expand x${HKDF_N}`,
+    includeJs
+      ? async () => {
+          const { hkdf } = await import("@noble/hashes/hkdf");
+          const { sha256 } = await import("@noble/hashes/sha256");
+          const ikm = new Uint8Array(32), salt = new Uint8Array(16);
+          for (let i = 0; i < 32; i++) { ikm[i] = (i * 3 + 7) & 255; if (i < 16) salt[i] = i + 1; }
+          const info = enc("aegires|bench|hkdf");
+          let last = new Uint8Array(0);
+          const t0 = nowMs();
+          for (let k = 0; k < HKDF_N; k++) {
+            last = hkdf(sha256, ikm, salt, info, 44);
+            if (k % 200 === 199) { onProgress?.((k + 1) / HKDF_N); await yieldUi(); }
+          }
+          return { ms: nowMs() - t0, head: hexOf(last) };
+        }
+      : null,
+    async () => { const r = await nativeHkdfBench("java", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; },
+    async () => { const r = await nativeHkdfBench("c", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; },
+    "Java",
+    "hkdf",
+  );
 
-  for (const [id, name] of [["java", "Kotlin/Java"], ["c", "C library"]] as const) {
-    out.push(label(name) + "running...");
-    lines(out.slice());
-    try {
-      const r = await nativeBench(id, passes, mKiB, 3);
-      times[id] = median(r.ms);
-      heads[id] = r.head;
-      out[out.length - 1] = label(name) + fmtMs(times[id]) + "  (best " + fmtMs(Math.min(...r.ms)) + ", 3 runs)";
-    } catch (e) {
-      out[out.length - 1] = label(name) + "not available: " + String((e as any)?.message ?? e).split("\n")[0].slice(0, 100);
-    }
-    lines(out.slice());
-  }
+  // ---- AES-256-GCM, 64 KiB encrypt + decrypt x150 ----
+  await section(
+    `AES-256-GCM 64KiB enc+dec x${AES_N}`,
+    includeJs
+      ? async () => {
+          const { gcmOpen, gcmSeal } = await import("./crypto/aead.ts");
+          const key = new Uint8Array(32), plain = new Uint8Array(64 * 1024);
+          for (let i = 0; i < 32; i++) key[i] = (i * 11 + 5) & 255;
+          for (let i = 0; i < plain.length; i++) plain[i] = (i * 31 + (i >> 8)) & 255;
+          const aad = new Uint8Array(0);
+          const t0 = nowMs();
+          for (let k = 0; k < AES_N; k++) {
+            const nonce = new Uint8Array(12);
+            nonce[0] = k & 255; nonce[1] = k >> 8;
+            const back = gcmOpen(key, nonce, aad, gcmSeal(key, nonce, aad, plain, 16), 16);
+            if (!back || back[777] !== plain[777]) throw new Error("JS AES round trip failed");
+            if (k % 10 === 9) { onProgress?.((k + 1) / AES_N); await yieldUi(); }
+          }
+          const ms = nowMs() - t0;
+          return { ms, head: hexOf(gcmSeal(key, new Uint8Array(12), aad, plain, 16)) };
+        }
+      : null,
+    async () => { const r = await nativeAesBench(AES_N, 3); return { ms: median(r.ms), head: r.head }; },
+    null,
+    "Java/Conscrypt",
+    "aes",
+  );
 
-  const got = Object.keys(heads);
-  if (got.length > 1) {
-    out.push(got.every((k) => heads[k] === heads[got[0]]) ? "All engines gave the same key: OK" : "FAIL: engines gave DIFFERENT keys " + got.map((k) => k + "=" + heads[k]).join(" "));
-  }
-  if (times.c && times.java) out.push(`C is ${(times.java / times.c).toFixed(2)}x ${times.java >= times.c ? "faster" : "slower"} than Kotlin/Java`);
-  if (times.c && times.js) out.push(`C is ${(times.js / times.c).toFixed(1)}x faster than plain JS`);
-  else if (times.java && times.js) out.push(`Kotlin/Java is ${(times.js / times.java).toFixed(1)}x faster than plain JS`);
-  lines(out.slice());
+  push("");
+  const abi = diag.argon2Engine || "unknown";
+  push("Native: " + abi + " | Argon2id=" + (got["argon-c"] ? "native" : "Java") + " HKDF=" + (got["hkdf-c"] ? "native" : "Java") + " AES=Java");
 }

@@ -69,6 +69,22 @@ val aegiresNative = plugin {
             NativeOps.argon2Bench(engine, passes, memoryKiB, runs)
         }
 
+        // Benchmarks: "<hash head>;<ns>,<ns>,..." timed inside the native half.
+        registerNativeAsyncMethod("aegires.hkdfbench") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val engine: String by args.string()
+            val iterations: String by args.string()
+            val runs: String by args.string()
+            NativeOps.hkdfBench(engine, iterations, runs)
+        }
+
+        registerNativeAsyncMethod("aegires.aesbench") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val iterations: String by args.string()
+            val runs: String by args.string()
+            NativeOps.aesBench(iterations, runs)
+        }
+
         registerNativeMethod("aegires.argon2engine") { _ -> NativeOps.argon2Engine() }
 
         // All arguments are strings: password and salt as base64, the numbers in decimal.

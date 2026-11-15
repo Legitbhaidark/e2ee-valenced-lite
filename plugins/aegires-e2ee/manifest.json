@@ -4,7 +4,7 @@
 	"name": "Aegires E2EE",
 	"description": "Encrypt and decrypt Discord messages with a shared passphrase. Compatible with the Aegires Android client. Text messages only for now: attachments are blocked in encrypted chats. Includes a native module that speeds up key derivation.",
 	"author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
-	"version": "0.1.25",
+	"version": "0.1.26",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

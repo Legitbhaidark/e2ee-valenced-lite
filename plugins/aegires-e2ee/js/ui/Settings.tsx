@@ -25,7 +25,7 @@ import {
 import { maxPlaintextBytes } from "../crypto/v2.ts";
 import { FORCED_CHANNELS } from "../forced.ts";
 import { getSelfId } from "../self.ts";
-import { benchArgon2, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
+import { benchCrypto, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
 import { getKdfOverride } from "../crypto/kdf2.ts";
 import { diag, diagLines } from "../diag.ts";
 import { EngineHost } from "../engine/engine.ts";
@@ -286,27 +286,27 @@ function SettingsInner() {
       </Card>
 
       <Card
-        title="Argon2id benchmark"
-        hint="Runs the same Argon2id on plain JS, Kotlin/Java and the C library and shows each time, from microseconds to seconds. The native engines are timed inside the native half (median of 3 runs). Plain JS is slow: about 0.6 s per MiB on a phone."
+        title="Crypto benchmark"
+        hint="Times Argon2id, HKDF-SHA256 and AES-256-GCM on plain JS, Kotlin/Java and the C library. Native results are the median of 3 runs, timed inside the native half. The size below is for Argon2id. Plain JS is slow (about 0.6 s per MiB for Argon2id, and the AES test takes a while), so it is off by default."
       >
         <Chips
           options={[["1", "1 MiB"], ["8", "8 MiB"], ["32", "32 MiB"], ["64", "64 MiB (real)"]]}
           value={benchMiB}
           onChange={setBenchMiB}
         />
-        <ToggleRow label="Include plain JS (slow at large sizes)" value={benchJs} onChange={setBenchJs} />
+        <ToggleRow label="Include plain JS (slow)" value={benchJs} onChange={setBenchJs} />
         <Button
-          label={busy ? busyLabel("Benchmarking") : "Run benchmark"}
+          label={busy ? busyLabel("Benchmarking") : "Run crypto benchmark"}
           busy={busy}
           onPress={() =>
             run("Benchmark", async () => {
               setBenchLines([]);
-              await benchArgon2(Number(benchMiB), 3, benchJs, setBenchLines, onProgress);
+              await benchCrypto(Number(benchMiB), benchJs, setBenchLines, onProgress);
             })
           }
         />
         {benchLines.map((l: string, i: number) => (
-          <Text key={i} style={{ color: l.startsWith("FAIL") ? C.danger : C.text, marginTop: 4, fontFamily: "monospace" }}>{l}</Text>
+          <Text key={i} style={{ color: l.indexOf("MISMATCH") >= 0 ? C.danger : C.text, marginTop: l === "" ? 8 : 2, fontFamily: "monospace" }}>{l === "" ? " " : l}</Text>
         ))}
       </Card>
 

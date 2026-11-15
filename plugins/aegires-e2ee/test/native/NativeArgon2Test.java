@@ -54,6 +54,20 @@ public class NativeArgon2Test {
         check(bc.split(";")[0].equals(bj.split(";")[0]) && bc.split(";")[0].length() == 16, "bench: same hash head from c and java: " + bc.split(";")[0]);
         check(bc.split(";")[1].split(",").length == 3 && Long.parseLong(bc.split(";")[1].split(",")[0]) > 0, "bench: 3 timings in ns: " + bc.split(";")[1]);
 
+        check(NativeArgon2.isHkdfReady(), "C HKDF loaded and matched Java HKDF");
+        byte[] hs = new byte[16], hi = new byte[32], hn = "ctx".getBytes();
+        for (int i = 0; i < 32; i++) { hi[i] = (byte) i; if (i < 16) hs[i] = (byte) (i * 9); }
+        check(java.util.Arrays.equals(NativeOps.hkdfJava(hs, hi, hn, 76, 1), NativeArgon2.hkdf(hs, hi, hn, 76, 1)), "C HKDF == Java HKDF (76 bytes)");
+        // RFC 5869 test case 1 (independent known answer)
+        byte[] rIkm = new byte[22]; java.util.Arrays.fill(rIkm, (byte) 0x0b);
+        byte[] rSalt = new byte[13]; for (int i = 0; i < 13; i++) rSalt[i] = (byte) i;
+        byte[] rInfo = new byte[10]; for (int i = 0; i < 10; i++) rInfo[i] = (byte) (0xf0 + i);
+        check(NativeOpsTest.hex(NativeArgon2.hkdf(rSalt, rIkm, rInfo, 42, 1)).equals("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"), "C HKDF == RFC 5869 test case 1");
+        String hc = NativeOps.hkdfBench("c", "200", "3"), hj = NativeOps.hkdfBench("java", "200", "3");
+        check(hc.split(";")[0].equals(hj.split(";")[0]), "hkdf bench: same output from c and java: " + hc.split(";")[0]);
+        String ab = NativeOps.aesBench("5", "2");
+        check(ab.split(";")[0].length() == 16 && ab.split(";")[1].split(",").length == 2, "aes bench runs: " + ab);
+
         // 4. refused parameters give null (not a crash), and the C output is the exact length asked for
         check(NativeArgon2.hash(new byte[1], new byte[4], 1, 64, 32) == null, "short salt: null, no crash");
         check(NativeArgon2.hash(new byte[0], new byte[8], 1, 4, 32) == null, "memory below 8 KiB: null, no crash");
