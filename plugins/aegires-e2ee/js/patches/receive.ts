@@ -90,7 +90,7 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       // Aegires puts "[sz:W,H]" in front of image captions; hide it from the visible text.
       const sp = splitSizeTag(plain);
       if (sp.width !== null && sp.width > 0 && sp.height > 0) tag = { w: sp.width, h: sp.height };
-      m.content = sp.text || sp.width === null ? (storage.showLock && !lockMode.header ? LOCK : "") + sp.text : "";
+      m.content = sp.text || sp.width === null ? (storage.showLock && lockMode.front ? LOCK : "") + sp.text : "";
     } else if (r === "nokey") {
       diag.noKey++;
     } else if (r === "noauthor") {

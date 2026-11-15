@@ -62,7 +62,7 @@ export function applyDevKdf(): void {
 export const LOCK = "🔒 ";
 
 /** True while the lock is drawn next to the message time (patches/header.ts), so the text stays clean. */
-export const lockMode = { header: false };
+export const lockMode = { header: false, /** true only when the header lock could not be installed: then the lock goes in front of the text */ front: false };
 
 const keyCache = new Map<string, Uint8Array>();
 

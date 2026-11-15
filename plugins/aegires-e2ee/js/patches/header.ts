@@ -77,10 +77,7 @@ function mark(row: any): boolean {
       return true;
     }
   }
-  if (lockMode.header) {
-    lockMode.header = false; // put the lock back in the text
-    status("no text time (timestamp is " + typeof msg.timestamp + ") - lock shown in the text");
-  }
+  // Follow-up messages in a group have no header and so no time: nothing to mark, and that is normal.
   return false;
 }
 
@@ -212,7 +209,7 @@ export function installHeaderLock(): () => void {
     }
     if (++tries >= 20) {
       clearInterval(iv);
-      if (!routes) status("no route found - lock shown in the text");
+      if (!routes) { lockMode.front = true; status("no route found - lock shown in the text"); }
     }
   };
   const iv = setInterval(tryNative, 1000);
@@ -229,5 +226,6 @@ export function installHeaderLock(): () => void {
     shape = "";
     strippedFields.length = 0;
     lockMode.header = false;
+    lockMode.front = false;
   };
 }
