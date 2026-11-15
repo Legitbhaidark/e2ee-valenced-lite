@@ -28,6 +28,12 @@ public class NativeArgon2Test {
         check(NativeArgon2.status().startsWith("java:no C library"), "status says why: " + NativeArgon2.status());
         check(NativeArgon2.hash(new byte[1], new byte[8], 1, 8, 32) == null, "hash() is null when the library is not loaded");
 
+        String pwB = Base64.getEncoder().encodeToString("pw".getBytes()), saltB = Base64.getEncoder().encodeToString("saltsalt".getBytes());
+        boolean threw = false;
+        try { NativeOps.argon2idWith("c", pwB, saltB, "1", "64", "32"); } catch (IllegalStateException e) { threw = true; }
+        check(threw, "engine \"c\" refuses when the library is not loaded");
+        check(NativeOps.argon2idWith("auto", pwB, saltB, "1", "64", "32").equals(NativeOps.argon2idWith("java", pwB, saltB, "1", "64", "32")), "auto falls back to Java, same bytes");
+
         // 2. the real library
         check(NativeArgon2.load(cl, dir, new String[] {"nope", "host"}), "library extracted, loaded and passed the Java cross-check");
         check(NativeArgon2.status().equals("c:host"), "status: " + NativeArgon2.status());
@@ -41,6 +47,12 @@ public class NativeArgon2Test {
             long ms = (System.nanoTime() - t0) / 1_000_000;
             check(got.equals(c.expectedHex()), "C == independent reference: " + c.name() + " (" + ms + " ms)");
         }
+
+        String viaC = NativeOps.argon2idWith("c", pwB, saltB, "2", "256", "32");
+        check(viaC.equals(NativeOps.argon2idWith("java", pwB, saltB, "2", "256", "32")) && viaC.equals(NativeOps.argon2idWith("auto", pwB, saltB, "2", "256", "32")), "engines c / java / auto agree");
+        String bc = NativeOps.argon2Bench("c", "2", "256", "3"), bj = NativeOps.argon2Bench("java", "2", "256", "3");
+        check(bc.split(";")[0].equals(bj.split(";")[0]) && bc.split(";")[0].length() == 16, "bench: same hash head from c and java: " + bc.split(";")[0]);
+        check(bc.split(";")[1].split(",").length == 3 && Long.parseLong(bc.split(";")[1].split(",")[0]) > 0, "bench: 3 timings in ns: " + bc.split(";")[1]);
 
         // 4. refused parameters give null (not a crash), and the C output is the exact length asked for
         check(NativeArgon2.hash(new byte[1], new byte[4], 1, 64, 32) == null, "short salt: null, no crash");

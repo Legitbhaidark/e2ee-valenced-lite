@@ -13,19 +13,65 @@ public final class NativeOps {
 
     /** Argon2id v1.3, one lane. Arguments are strings because the bridge carries strings safely. */
     public static String argon2id(String passwordB64, String saltB64, String passes, String memoryKiB, String outLen) {
+        return argon2idWith("auto", passwordB64, saltB64, passes, memoryKiB, outLen);
+    }
+
+    /**
+     * Same, but the caller picks the engine: "auto" (C library, else Java), "c" (C only, fails if it
+     * is not loaded) or "java" (the Java code only). All engines give the same bytes.
+     */
+    public static String argon2idWith(String engine, String passwordB64, String saltB64, String passes, String memoryKiB, String outLen) {
         byte[] password = decode(passwordB64);
         byte[] salt = decode(saltB64);
         int t = Integer.parseInt(passes);
         int m = Integer.parseInt(memoryKiB);
         int len = Integer.parseInt(outLen);
+        checkParams(t, m, len);
+        byte[] out = runArgon2(engine, password, salt, t, m, len);
+        java.util.Arrays.fill(password, (byte) 0);
+        return encode(out);
+    }
+
+    /**
+     * Benchmark: runs Argon2id `runs` times with fixed inputs on one engine and returns
+     * "<first 8 output bytes in hex>;<ns run 1>,<ns run 2>,..." (timed here, so the bridge is not in the numbers).
+     */
+    public static String argon2Bench(String engine, String passes, String memoryKiB, String runsStr) {
+        int t = Integer.parseInt(passes);
+        int m = Integer.parseInt(memoryKiB);
+        int runs = Math.max(1, Math.min(10, Integer.parseInt(runsStr)));
+        checkParams(t, m, 32);
+        byte[] password = "benchmark-password".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] salt = "dcenc2|bench|v1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] out = null;
+        StringBuilder times = new StringBuilder();
+        for (int i = 0; i < runs; i++) {
+            long t0 = System.nanoTime();
+            out = runArgon2(engine, password, salt, t, m, 32);
+            long ns = System.nanoTime() - t0;
+            if (i > 0) times.append(',');
+            times.append(ns);
+        }
+        StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < 8 && i < out.length; i++) {
+            hex.append(Character.forDigit((out[i] >> 4) & 15, 16)).append(Character.forDigit(out[i] & 15, 16));
+        }
+        return hex + ";" + times;
+    }
+
+    private static void checkParams(int t, int m, int len) {
         if (t < 1 || t > 16) throw new IllegalArgumentException("passes");
         if (m < 8 || m > MAX_MEMORY_KIB) throw new IllegalArgumentException("memory");
         if (len < 4 || len > 1024) throw new IllegalArgumentException("outLen");
+    }
+
+    private static byte[] runArgon2(String engine, byte[] password, byte[] salt, int t, int m, int len) {
+        if ("java".equals(engine)) return Argon2id.hash(password, salt, t, m, len);
         // C library when it is loaded and passed its check, otherwise the Java code (same bytes).
         byte[] out = NativeArgon2.hash(password, salt, t, m, len);
-        if (out == null) out = Argon2id.hash(password, salt, t, m, len);
-        java.util.Arrays.fill(password, (byte) 0);
-        return encode(out);
+        if (out != null) return out;
+        if ("c".equals(engine)) throw new IllegalStateException("C library not available: " + NativeArgon2.status());
+        return Argon2id.hash(password, salt, t, m, len);
     }
 
     /** "c:<abi>" when Argon2id runs in the C library, otherwise "java:<why not>". */

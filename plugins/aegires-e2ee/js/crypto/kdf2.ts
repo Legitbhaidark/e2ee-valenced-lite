@@ -40,19 +40,43 @@ export function setArgon2Offload(fn: Argon2Offload | null): void {
   offload = fn;
 }
 
+/** Developer option: replaces the standard 3 passes / 64 MiB. Keys made this way do NOT match other Aegires clients. */
+export type KdfOverride = { t: number; mKiB: number };
+let kdfOverride: KdfOverride | null = null;
+
+export function setKdfOverride(o: KdfOverride | null): void {
+  kdfOverride = o;
+}
+
+export const getKdfOverride = (): KdfOverride | null => kdfOverride;
+
+/** Developer option: which Argon2id runs. auto = C library, else Kotlin/Java, else plain JS. */
+export type ArgonEngine = "auto" | "c" | "java" | "js";
+let argonEngine: ArgonEngine = "auto";
+
+export function setArgonEngine(e: ArgonEngine): void {
+  argonEngine = e;
+}
+
+export const getArgonEngine = (): ArgonEngine => argonEngine;
+
 export async function deriveMasterKey(password: string, opts: KdfOptions = {}): Promise<Uint8Array> {
   if (!password) throw new Error("empty password");
   const salt = utf8Encode(opts.context === undefined ? USER_KEY_SALT : "dcenc2|ctx|" + opts.context);
-  if (offload) {
-    const fast = await offload(utf8Encode(normalize(password)), salt, ARGON_T, opts.memoryKiB ?? ARGON_M_KIB, MASTER_LEN).catch(() => null);
+  // The memory test hook (self-test vectors) always wins over the developer override.
+  const custom = opts.memoryKiB === undefined ? kdfOverride : null;
+  const t = custom ? custom.t : ARGON_T;
+  const m = opts.memoryKiB ?? (custom ? custom.mKiB : ARGON_M_KIB);
+  if (offload && argonEngine !== "js") {
+    const fast = await offload(utf8Encode(normalize(password)), salt, t, m, MASTER_LEN).catch(() => null);
     if (fast && fast.length === MASTER_LEN) return fast;
   }
   // Lazy import: BLAKE2b (@noble/hashes) uses BigInt at module load. Loading it only when a key is
   // derived means a runtime without BigInt can still decrypt/encrypt with stored keys.
   const { argon2id } = await import("./argon2.ts");
   return argon2id(utf8Encode(normalize(password)), salt, {
-    t: ARGON_T,
-    m: opts.memoryKiB ?? ARGON_M_KIB,
+    t,
+    m,
     dkLen: MASTER_LEN,
     onProgress: opts.onProgress, // also yields to the event loop every ~100 ms so the UI stays alive
   });

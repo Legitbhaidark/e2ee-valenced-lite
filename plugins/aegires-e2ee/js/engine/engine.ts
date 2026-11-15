@@ -6,7 +6,7 @@
 // falls back to the plain JS Argon2id (same bytes, just slower). The WebView engine of the Kettu
 // version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
 import { unscoped } from "../host.ts";
-import { setArgon2Offload } from "../crypto/kdf2.ts";
+import { getArgonEngine, setArgon2Offload } from "../crypto/kdf2.ts";
 import { base64Decode, base64Encode } from "../crypto/base64.ts";
 import { diag } from "../diag.ts";
 import { AES256, decryptMessage, encryptMessage } from "../crypto/v2.ts";
@@ -51,12 +51,24 @@ function callNative(method: string, args: string[], timeoutMs: number): Promise<
 }
 
 async function nativeArgon2(password: Uint8Array, salt: Uint8Array, t: number, mKiB: number, len: number): Promise<Uint8Array | null> {
-  const out = await callNative(
-    "argon2id",
-    [base64Encode(password), base64Encode(salt), String(t), String(mKiB), String(len)],
-    ARGON_TIMEOUT_MS,
-  );
+  // Developer option: a fixed engine ("c" or "java") goes through argon2with; auto keeps the original call.
+  const engine = getArgonEngine();
+  const fixed = engine === "c" || engine === "java";
+  const base = [base64Encode(password), base64Encode(salt), String(t), String(mKiB), String(len)];
+  const out = await callNative(fixed ? "argon2with" : "argon2id", fixed ? [engine, ...base] : base, ARGON_TIMEOUT_MS);
   return typeof out === "string" ? base64Decode(out) : null;
+}
+
+/**
+ * Benchmark of one native engine ("c" or "java"): runs Argon2id `runs` times inside the native half
+ * (timed there, so the bridge is not in the numbers). Returns the timings in ms and the first 8
+ * output bytes (hex) so engines can be compared. Throws with the reason when the engine is not available.
+ */
+export async function nativeBench(engine: "c" | "java", t: number, mKiB: number, runs: number): Promise<{ ms: number[]; head: string }> {
+  const out = await callNative("argon2bench", [engine, String(t), String(mKiB), String(runs)], 120000);
+  if (typeof out !== "string" || out.indexOf(";") < 0) throw new Error("unexpected benchmark reply");
+  const [head, times] = out.split(";");
+  return { head, ms: times.split(",").map((n) => Number(n) / 1e6) };
 }
 
 /** Real-size offload: records success or the exact failure in Diagnostics, then lets the JS code take over on failure. */

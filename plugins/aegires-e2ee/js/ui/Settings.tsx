@@ -6,7 +6,10 @@ import { selectedChannelId } from "../patch.ts";
 import { storage, storageNote } from "../storage.ts";
 import { notify as showToast } from "../notify.ts";
 import {
+  MAX_KDF_MIB,
+  MAX_KDF_PASSES,
   PRESETS,
+  applyDevKdf,
   clearGlobalKey,
   getPreset,
   hasGlobalKey,
@@ -22,7 +25,8 @@ import {
 import { maxPlaintextBytes } from "../crypto/v2.ts";
 import { FORCED_CHANNELS } from "../forced.ts";
 import { getSelfId } from "../self.ts";
-import { measureKdf, runSelfTest } from "../selftest.ts";
+import { benchArgon2, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
+import { getKdfOverride } from "../crypto/kdf2.ts";
 import { diag, diagLines } from "../diag.ts";
 import { EngineHost } from "../engine/engine.ts";
 import { BUILD_NUMBER, DEVELOPER, PLUGIN_VERSION } from "../about.ts";
@@ -79,6 +83,22 @@ function Field(props: { value: string; onChange: (v: string) => void; placeholde
   );
 }
 
+function Chips(props: { options: Array<[string, string]>; value: string; onChange: (v: string) => void }) {
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 8 }}>
+      {props.options.map(([v, label]) => (
+        <Touch
+          key={v}
+          onPress={() => props.onChange(v)}
+          style={{ backgroundColor: props.value === v ? C.accent : C.input, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, marginRight: 8, marginBottom: 8 }}
+        >
+          <Text style={{ color: props.value === v ? "#fff" : C.text, fontWeight: "600" }}>{label}</Text>
+        </Touch>
+      ))}
+    </View>
+  );
+}
+
 function Card(props: { title: string; children?: any; hint?: string }) {
   return (
     <View style={{ backgroundColor: C.card, borderRadius: 8, padding: 12, marginBottom: 12 }}>
@@ -114,6 +134,11 @@ function SettingsInner() {
   const [chanId, setChanId] = React.useState(currentChannelId());
   const [chanPw, setChanPw] = React.useState("");
   const [testLines, setTestLines] = React.useState([] as string[]);
+  const [benchMiB, setBenchMiB] = React.useState("8");
+  const [benchJs, setBenchJs] = React.useState(false);
+  const [benchLines, setBenchLines] = React.useState([] as string[]);
+  const [kdfMem, setKdfMem] = React.useState(String(storage.devKdfMemMiB ?? 64));
+  const [kdfPasses, setKdfPasses] = React.useState(String(storage.devKdfPasses ?? 3));
   const [pct, setPct] = React.useState(-1); // Argon2id progress, -1 = idle
   const onProgress = (f: number) => setPct(Math.round(f * 100));
   const [buildTaps, setBuildTaps] = React.useState({ n: 0, t: 0 });
@@ -250,11 +275,37 @@ function SettingsInner() {
               const jobs = diag.engineJobs;
               const ms = await measureKdf(onProgress);
               const how = diag.engineJobs > jobs ? "natively - " + (diag.argon2Engine || "Kotlin") : "in plain JS - native: " + (diag.installed["native crypto"] ?? "not started") + (diag.engineLastError ? ", last error: " + diag.engineLastError : "");
-              setTestLines([`Argon2id 64 MiB took ${(ms / 1000).toFixed(1)} s on this phone, ${how}`]);
+              const o = getKdfOverride();
+              setTestLines([`Argon2id ${o ? o.mKiB / 1024 + " MiB (custom), " + o.t + " passes" : "64 MiB"} took ${fmtMs(ms)} on this phone, ${how}`]);
             })
           }
         />
         {testLines.map((l: string, i: number) => (
+          <Text key={i} style={{ color: l.startsWith("FAIL") ? C.danger : C.text, marginTop: 4, fontFamily: "monospace" }}>{l}</Text>
+        ))}
+      </Card>
+
+      <Card
+        title="Argon2id benchmark"
+        hint="Runs the same Argon2id on plain JS, Kotlin/Java and the C library and shows each time, from microseconds to seconds. The native engines are timed inside the native half (median of 3 runs). Plain JS is slow: about 0.6 s per MiB on a phone."
+      >
+        <Chips
+          options={[["1", "1 MiB"], ["8", "8 MiB"], ["32", "32 MiB"], ["64", "64 MiB (real)"]]}
+          value={benchMiB}
+          onChange={setBenchMiB}
+        />
+        <ToggleRow label="Include plain JS (slow at large sizes)" value={benchJs} onChange={setBenchJs} />
+        <Button
+          label={busy ? busyLabel("Benchmarking") : "Run benchmark"}
+          busy={busy}
+          onPress={() =>
+            run("Benchmark", async () => {
+              setBenchLines([]);
+              await benchArgon2(Number(benchMiB), 3, benchJs, setBenchLines, onProgress);
+            })
+          }
+        />
+        {benchLines.map((l: string, i: number) => (
           <Text key={i} style={{ color: l.startsWith("FAIL") ? C.danger : C.text, marginTop: 4, fontFamily: "monospace" }}>{l}</Text>
         ))}
       </Card>
@@ -281,6 +332,48 @@ function SettingsInner() {
             label="Allow passwords as short as 1 character instead of 8. Makes the client less secure - proceed with caution"
             value={!!storage.devShortPw}
             onChange={(v) => { storage.devShortPw = v; refresh(); }}
+          />
+          <Text style={{ color: C.text, fontWeight: "700", marginTop: 14 }}>Argon2id engine</Text>
+          <Text style={{ color: C.muted, marginTop: 4 }}>
+            Which code derives your key. Auto uses the C library, then Kotlin/Java, then plain JS. A fixed engine that is not available falls back to plain JS (see Diagnostics). All engines give the same key.
+          </Text>
+          <Chips
+            options={[["auto", "Auto"], ["c", "C library"], ["java", "Kotlin/Java"], ["js", "Plain JS"]]}
+            value={String(storage.devArgonEngine ?? "auto")}
+            onChange={(v) => { storage.devArgonEngine = v; applyDevKdf(); refresh(); }}
+          />
+          <Text style={{ color: C.text, fontWeight: "700", marginTop: 10 }}>Custom Argon2id size</Text>
+          <Text style={{ color: C.danger, marginTop: 4 }}>
+            Bad idea. Lowering memory or passes makes your password much easier to crack, and keys made with other values do NOT match the Aegires app or other users: nobody could read your messages and you could not read theirs. Only do this if you know what you are doing. It applies to the next key you derive (set the password again after changing it).
+          </Text>
+          <ToggleRow
+            label={"Force custom size (standard: 64 MiB, 3 passes)"}
+            value={!!storage.devKdfOn}
+            onChange={(v) => {
+              const apply = () => { storage.devKdfOn = v; applyDevKdf(); refresh(); };
+              if (!v) return apply();
+              try {
+                RN.Alert.alert("Weaker, incompatible keys", "Only continue if you know what you are doing. Messages will not be readable by anyone using the standard size.", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "I know what I am doing", style: "destructive", onPress: apply },
+                ]);
+              } catch { apply(); }
+            }}
+          />
+          <Field value={kdfMem} onChange={setKdfMem} placeholder={"Memory in MiB (1-" + MAX_KDF_MIB + ")"} />
+          <Field value={kdfPasses} onChange={setKdfPasses} placeholder={"Passes (1-" + MAX_KDF_PASSES + ")"} />
+          <Button
+            label="Save custom size"
+            onPress={() => {
+              const m = Number(kdfMem), t = Number(kdfPasses);
+              if (!Number.isInteger(m) || m < 1 || m > MAX_KDF_MIB) return showToast("Memory must be a whole number from 1 to " + MAX_KDF_MIB + " MiB");
+              if (!Number.isInteger(t) || t < 1 || t > MAX_KDF_PASSES) return showToast("Passes must be a whole number from 1 to " + MAX_KDF_PASSES);
+              storage.devKdfMemMiB = m;
+              storage.devKdfPasses = t;
+              applyDevKdf();
+              showToast("Saved: " + m + " MiB, " + t + " passes" + (storage.devKdfOn ? "" : " (not forced yet)"));
+              refresh();
+            }}
           />
           <Button label="Turn developer options off" danger onPress={() => { setDeveloperMode(false); showToast("Developer options off"); refresh(); }} />
         </Card>

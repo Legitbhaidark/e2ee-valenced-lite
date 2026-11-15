@@ -47,6 +47,28 @@ val aegiresNative = plugin {
         registerNativeMethod("aegires.ping") { _ -> "pong" }
 
         // "c:<abi>" when Argon2id runs in the C library, otherwise "java:<why not>" (for Diagnostics).
+        // Developer use: same as argon2id but with the engine chosen by the caller ("auto", "c", "java").
+        registerNativeAsyncMethod("aegires.argon2with") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val engine: String by args.string()
+            val password: String by args.string()
+            val salt: String by args.string()
+            val passes: String by args.string()
+            val memoryKiB: String by args.string()
+            val outLen: String by args.string()
+            NativeOps.argon2idWith(engine, password, salt, passes, memoryKiB, outLen)
+        }
+
+        // Benchmark: runs one engine a few times and returns "<hash head>;<ns>,<ns>,...".
+        registerNativeAsyncMethod("aegires.argon2bench") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val engine: String by args.string()
+            val passes: String by args.string()
+            val memoryKiB: String by args.string()
+            val runs: String by args.string()
+            NativeOps.argon2Bench(engine, passes, memoryKiB, runs)
+        }
+
         registerNativeMethod("aegires.argon2engine") { _ -> NativeOps.argon2Engine() }
 
         // All arguments are strings: password and salt as base64, the numbers in decimal.

@@ -9,7 +9,7 @@
 // secrets: anyone who can read this plugin's storage can read your chats.
 import { storage } from "./storage.ts";
 import { deriveKey } from "./crypto/keys.ts";
-import { deriveMasterKey } from "./crypto/kdf2.ts";
+import { deriveMasterKey, setArgonEngine, setKdfOverride, type ArgonEngine } from "./crypto/kdf2.ts";
 import { fromHex, toHex } from "./crypto/hex.ts";
 import { AES128, AES256, PRESETS, presetFromIndex, type Preset } from "./crypto/v2.ts";
 import { FORCED_CHANNELS } from "./forced.ts";
@@ -29,6 +29,10 @@ export function initStorage(): void {
   storage.format ??= "v2";
   storage.devMode ??= false; // developer options (unlocked by tapping the build number 5 times)
   storage.devShortPw ??= false; // developer option: allow 1-character passwords
+  storage.devKdfOn ??= false; // developer option: custom Argon2id passes / memory (keys no longer match other clients)
+  storage.devKdfMemMiB ??= 64;
+  storage.devKdfPasses ??= 3;
+  storage.devArgonEngine ??= "auto"; // developer option: auto | c | java | js
   if (storage.format === "v1" && !storage.devMode) storage.format = "v2"; // v1 is behind developer options
   storage.preset ??= AES256.index;
   storage.padme ??= true;
@@ -37,6 +41,21 @@ export function initStorage(): void {
   storage.showLock ??= true;
   storage.attachmentsExp ??= false; // experimental encrypted attachments, opt-in
   storage.debug ??= false;
+  applyDevKdf();
+}
+
+export const MAX_KDF_MIB = 256; // the native half refuses more
+export const MAX_KDF_PASSES = 16;
+
+/** Pushes the developer Argon2id options (custom size, engine) into the key derivation. Off unless developer options are on. */
+export function applyDevKdf(): void {
+  const on = !!storage.devMode;
+  const mem = Math.floor(Number(storage.devKdfMemMiB));
+  const t = Math.floor(Number(storage.devKdfPasses));
+  const valid = mem >= 1 && mem <= MAX_KDF_MIB && t >= 1 && t <= MAX_KDF_PASSES;
+  setKdfOverride(on && storage.devKdfOn && valid ? { t, mKiB: mem * 1024 } : null);
+  const e = String(storage.devArgonEngine);
+  setArgonEngine(on && (e === "c" || e === "java" || e === "js") ? (e as ArgonEngine) : "auto");
 }
 
 /** Shown in front of the time of decrypted messages (or, if that hook fails, in front of the text). */
@@ -164,8 +183,11 @@ export function setDeveloperMode(on: boolean): void {
   storage.devMode = on;
   if (!on) {
     storage.devShortPw = false;
+    storage.devKdfOn = false;
+    storage.devArgonEngine = "auto";
     if (storage.format === "v1") storage.format = "v2";
   }
+  applyDevKdf();
 }
 
 /** Same limits as the Aegires app (unless the developer option for short passwords is on). */
