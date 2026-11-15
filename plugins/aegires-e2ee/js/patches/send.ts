@@ -59,7 +59,9 @@ export function installSendPatch(): () => void {
           }
           tag = captionSizeTag(files);
         }
-        const out = prepare(channelId, tag && typeof message.content === "string" && message.content ? tag + message.content : message.content);
+        // The size tag must ride along even when there is no caption: Aegires reads the picture size
+        // only from it, so an image sent without text used to arrive without a size.
+        const out = prepare(channelId, tag ? tag + (typeof message.content === "string" ? message.content : "") : message.content);
         diag.lastSend = `on=${isEncryptionOn(channelId)} key=${!!getSendKey(channelId)} -> ${out === BLOCK ? "BLOCKED" : out === null ? "sent unchanged" : "encrypted"}`;
         if (storage.debug) console.log("[aegires-e2ee] sendMessage", channelId, diag.lastSend, options ? Object.keys(options) : "");
         if (out === BLOCK) return Promise.resolve();

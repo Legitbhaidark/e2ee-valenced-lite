@@ -33,6 +33,14 @@ export function instead(name: string, obj: any, cb: (args: any[], orig: (...a: a
   return unscoped().patcher.instead(obj, name, (args: any[], orig: (...a: any[]) => any) => cb(args, orig));
 }
 
+/** Runs cb(result) after obj[name] and returns what cb returns (or the result if it returns nothing). */
+export function after(name: string, obj: any, cb: (result: any) => any): () => void {
+  return unscoped().patcher.after(obj, name, (result: any) => {
+    const r = cb(result);
+    return r === undefined ? result : r;
+  });
+}
+
 /** Runs cb(args) before obj[name]; cb may return a new args array. Returns an unpatch. */
 export function before(name: string, obj: any, cb: (args: any[]) => any[] | void): () => void {
   return unscoped().patcher.before(obj, name, (args: any[]) => {

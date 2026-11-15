@@ -157,11 +157,14 @@ export function uploadFileName(u: any): string {
   return String(u?.filename ?? d?.filename ?? d?.name ?? u?.name ?? "");
 }
 
+/** Same, by the random encrypted file name: survives Discord copying the file to another uri. */
+const sizesByName = new Map<string, { w: number; h: number } | null>();
+
 /** "[sz:W,H]" prefix for the caption, from the first already-encrypted image among the uploads. */
 export function captionSizeTag(files: any[]): string {
   for (const u of files) {
     const d = descriptorOf(u);
-    const s = d ? sizes.get(d.uri) : null;
+    const s = (d ? sizes.get(d.uri) : null) ?? sizesByName.get(uploadFileName(u)) ?? null;
     if (s) return makeSizeTag(s.w, s.h);
   }
   return "";
@@ -192,7 +195,9 @@ async function encryptUpload(u: any, seal: Seal): Promise<{ w: number; h: number
   if (d.uri !== tmp) throw new Error("could not swap upload uri");
   if ((d.filename ?? d.name ?? u.filename) !== encName) throw new Error("could not swap file name");
   sizes.set(tmp, size);
+  sizesByName.set(encName, size);
   if (sizes.size > 200) sizes.delete(sizes.keys().next().value as string);
+  if (sizesByName.size > 200) sizesByName.delete(sizesByName.keys().next().value as string);
   diag.attEncrypted++;
   return size;
 }

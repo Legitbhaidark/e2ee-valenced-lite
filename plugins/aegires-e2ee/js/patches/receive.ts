@@ -15,7 +15,7 @@ import { storage } from "../storage.ts";
 import { decryptText, looksEncrypted } from "../crypto/wire.ts";
 import { splitSizeTag } from "../crypto/files.ts";
 import { decryptMessage as decryptV2, messagePreset } from "../crypto/v2.ts";
-import { LOCK, getReceiveKeys, getReceiveKeysV2, isEncryptionOn } from "../state.ts";
+import { LOCK, getReceiveKeys, lockMode, getReceiveKeysV2, isEncryptionOn } from "../state.ts";
 import { noteSelfId } from "../self.ts";
 import { notify } from "../notify.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
@@ -39,6 +39,9 @@ function remember(id: unknown): void {
 // v2 binds each ciphertext to (channel id, AUTHOR id). Partial MESSAGE_UPDATE events can omit
 // the author, so remember who wrote what from earlier events.
 const authorById = new Map<string, string>();
+
+// The sender's [sz:W,H] size per message: later partial updates of the message carry no text.
+const tagById = new Map<string, { w: number; h: number }>();
 
 function authorOf(m: any): string | undefined {
   const id = m.author?.id;
@@ -87,13 +90,22 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       // Aegires puts "[sz:W,H]" in front of image captions; hide it from the visible text.
       const sp = splitSizeTag(plain);
       if (sp.width !== null && sp.width > 0 && sp.height > 0) tag = { w: sp.width, h: sp.height };
-      m.content = sp.text || sp.width === null ? (storage.showLock ? LOCK : "") + sp.text : "";
+      m.content = sp.text || sp.width === null ? (storage.showLock && !lockMode.header ? LOCK : "") + sp.text : "";
     } else if (r === "nokey") {
       diag.noKey++;
     } else if (r === "noauthor") {
       diag.noAuthor++;
     } else {
       diag.wrongKey++;
+    }
+  }
+  if (m.id != null) {
+    const key = String(m.id);
+    if (tag) {
+      tagById.set(key, tag);
+      if (tagById.size > 2000) tagById.delete(tagById.keys().next().value as string);
+    } else {
+      tag = tagById.get(key) ?? null;
     }
   }
   if (Array.isArray(m.attachments) && m.attachments.length) handleAttachments(m, channelId, authorId, tag);

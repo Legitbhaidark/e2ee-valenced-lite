@@ -39,8 +39,11 @@ export function initStorage(): void {
   storage.debug ??= false;
 }
 
-/** Shown in front of decrypted messages (if enabled). */
+/** Shown in front of the time of decrypted messages (or, if that hook fails, in front of the text). */
 export const LOCK = "🔒 ";
+
+/** True while the lock is drawn next to the message time (patches/header.ts), so the text stays clean. */
+export const lockMode = { header: false };
 
 const keyCache = new Map<string, Uint8Array>();
 

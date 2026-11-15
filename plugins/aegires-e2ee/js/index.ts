@@ -15,6 +15,7 @@ import { bindHost, unbindHost } from "./host.ts";
 import { attachStorage, detachStorage, storageNote } from "./storage.ts";
 import { startNative, stopNative } from "./engine/engine.ts";
 import { installVideoPlayer } from "./patches/player.ts";
+import { installHeaderLock } from "./patches/header.ts";
 
 let undo: Array<() => void> = [];
 let timers: any[] = [];
@@ -59,6 +60,7 @@ export default plugin({
     safely("send patch", installSendPatch);
     safely("receive patch", installReceivePatch);
     safely("video player", installVideoPlayer);
+    safely("header lock", installHeaderLock);
     // Faster Argon2id from the native half, if it is installed and passes its self-check.
     void startNative();
     api.cleanup(unloadAll, stopNative, async () => {
