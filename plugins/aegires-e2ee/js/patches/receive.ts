@@ -149,7 +149,7 @@ function interceptAttach(event: any, type: string): boolean {
   diag.installed["attach event"] = `${type} keys=${Object.keys(event).join(",")}`.slice(0, 140);
   const files = [event.files, event.uploads, event.items, event.attachments].find((x) => Array.isArray(x) && x.length);
   if (!files) {
-    notify("Unknown attachment format, so it cannot be encrypted - file not attached. Turn encryption off for this chat to send it unencrypted, and report the Diagnostics output.");
+    notify("Unknown attachment format, so it cannot be encrypted - file not attached. Turn encryption off for this chat to send it unencrypted, and report this.");
     return true;
   }
   const dispatch = dispatcher();

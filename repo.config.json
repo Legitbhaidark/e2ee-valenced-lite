@@ -1,5 +1,9 @@
 {
 	"name": "Dark's Plugins",
 	"description": "Aegires E2EE for Valenced",
-	"channels": {}
+	"channels": {
+		"io.github.system32crowdstrikewin11.aegires-e2ee": {
+			"lts": "0.1.27"
+		}
+	}
 }

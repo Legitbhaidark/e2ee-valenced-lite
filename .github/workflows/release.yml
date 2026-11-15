@@ -4,7 +4,7 @@
 name: Release plugins
 
 # main publishes releases (plain versions, the "latest" channel). dev publishes dev builds
-# (versions like 1.2.3-dev.4, built with -Pdev, which Valenced puts on the "beta" channel).
+# (versions like 1.2.3-dev4, built with -Pdev, which Valenced puts on the "beta" channel).
 on:
   push:
     branches: [main, dev]

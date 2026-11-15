@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# main releases plain versions, dev releases "-dev.N" versions, and the version shown in the plugin
+# main releases plain versions, dev releases "-devN" versions, and the version shown in the plugin
 # (about.ts) must match the manifest. Fails early with a readable message instead of publishing the
 # wrong thing to the wrong channel.
 set -euo pipefail
@@ -13,7 +13,7 @@ case "$branch" in
   main)
     [[ "$version" != *-* ]] || { echo "::error::main publishes releases: ${manifest} version '${version}' must have no label (e.g. 0.1.28)"; exit 1; } ;;
   dev)
-    [[ "$version" =~ -dev\.[0-9]+$ ]] || { echo "::error::dev publishes dev builds: ${manifest} version '${version}' must end in -dev.N (e.g. 0.1.28-dev.1)"; exit 1; } ;;
+    [[ "$version" =~ -dev[0-9]+$ ]] || { echo "::error::dev publishes dev builds: ${manifest} version '${version}' must end in -devN with no dot (e.g. 0.1.28-dev1)"; exit 1; } ;;
 esac
 
 shown="$(sed -n 's/^export const PLUGIN_VERSION = "\(.*\)";.*/\1/p' "$about")"

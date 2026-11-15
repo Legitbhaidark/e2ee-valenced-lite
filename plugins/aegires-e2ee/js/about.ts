@@ -1,9 +1,9 @@
 // Shown in the "Plugin versions" card of the settings. Keep PLUGIN_VERSION in step with manifest.json
-// (CI checks it). Dev builds carry a "-dev.N" label (they go to the "beta" channel), releases do not.
+// (CI checks it). Dev builds carry a "-devN" label (they go to the "beta" channel), releases do not.
 declare const __DEV__: boolean;
 
 export const DEVELOPER = "Dark (system32crowdstrikewin11)";
-export const PLUGIN_VERSION = "0.1.28-dev.1";
+export const PLUGIN_VERSION = "0.1.28-dev1";
 export const BUILD_NUMBER = "26110128"; // YYMM + (minor * 100 + patch); shown as text
 
 /**
