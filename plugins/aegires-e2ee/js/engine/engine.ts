@@ -76,7 +76,7 @@ async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: nu
 }
 
 const V2_TIMEOUT_MS = 10000;
-const FILE_TIMEOUT_MS = 120000;
+const FILE_TIMEOUT_MS = 30 * 60 * 1000; // a 1 GiB file on a slow connection takes a while
 
 /** Native method outside our namespace (Valenced's own file-system methods). */
 function callRaw(name: string, args: string[], timeoutMs: number): Promise<unknown> {

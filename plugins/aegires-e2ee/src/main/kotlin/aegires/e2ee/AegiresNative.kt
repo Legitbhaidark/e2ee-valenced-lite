@@ -2,6 +2,8 @@
 
 package aegires.e2ee
 
+import android.content.Context
+import android.net.Uri
 import app.valenced.bridge.asDelegate
 import app.valenced.plugins.plugin
 import app.valenced.xposed.api.registerNativeAsyncMethod
@@ -20,6 +22,10 @@ import app.valenced.xposed.api.registerNativeMethod
 val aegiresNative = plugin {
     start {
         log.i("Aegires native crypto loaded (${manifest.id})")
+
+        // The app's Context, to read content:// uris (picked files) as streams instead of through JS.
+        var appContext: Context? = null
+        withAppContext { appContext = it }
 
         // The JS side calls this once to find out whether the native half is installed.
         registerNativeMethod("aegires.ping") { _ -> "pong" }
@@ -69,7 +75,13 @@ val aegiresNative = plugin {
             val src: String by args.string()
             val outPath: String by args.string()
             val maxBytes: String by args.string()
-            FileOps.seal(master, preset, channelId, senderId, src, outPath, maxBytes)
+            val ctx = appContext
+            if (src.startsWith("content://") && ctx != null) {
+                val input = ctx.contentResolver.openInputStream(Uri.parse(src)) ?: throw IllegalStateException("cannot open file")
+                FileOps.sealStream(master, preset, channelId, senderId, input, outPath, maxBytes)
+            } else {
+                FileOps.seal(master, preset, channelId, senderId, src, outPath, maxBytes)
+            }
         }
 
         // Same, for plaintext that JS already read (base64), e.g. content:// uris.
@@ -110,7 +122,7 @@ val aegiresNative = plugin {
             val args = rawArgs.asDelegate()
             val path: String by args.string()
             val kind: String by args.string()
-            MediaInfo.probe(path, kind)
+            MediaInfo.probe(appContext, path, kind)
         }
 
         // Full-screen playback of a decrypted video file (path under .../aegires/). Returns "ok".

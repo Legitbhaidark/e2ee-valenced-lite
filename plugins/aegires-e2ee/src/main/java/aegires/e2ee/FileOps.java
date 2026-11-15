@@ -27,7 +27,7 @@ public final class FileOps {
     private FileOps() {}
 
     /** Hard ceiling regardless of what the caller asks for. */
-    static final long MAX_BYTES = 64L << 20;
+    static final long MAX_BYTES = 1L << 30; // 1 GiB; the work is chunked, so memory use stays small
 
     /** Only Discord's CDN hosts, over https. */
     public static boolean isAllowedUrl(String url) {
@@ -166,6 +166,20 @@ public final class FileOps {
     public static String seal(String masterB64, String presetIndex, String channelId, String senderId, String src, String outPath, String maxBytes) {
         try {
             return Long.toString(run(true, masterKey(masterB64), Integer.parseInt(presetIndex), channelId, senderId, src, null, outPath, Long.parseLong(maxBytes)));
+        } catch (IOException e) {
+            throw new IllegalStateException(e.getMessage() == null ? "io error" : e.getMessage());
+        }
+    }
+
+    /**
+     * Like seal, but reads the plaintext from an already open stream (for sources Java cannot open
+     * by path, such as content:// uris opened by the Android side). The stream is closed.
+     */
+    public static String sealStream(String masterB64, String presetIndex, String channelId, String senderId, InputStream in, String outPath, String maxBytes) {
+        try {
+            long max = Long.parseLong(maxBytes);
+            long cap = max < 1 || max > MAX_BYTES ? MAX_BYTES : max;
+            return Long.toString(run(true, masterKey(masterB64), Integer.parseInt(presetIndex), channelId, senderId, "", new Limited(new BufferedInputStream(in), cap), outPath, max));
         } catch (IOException e) {
             throw new IllegalStateException(e.getMessage() == null ? "io error" : e.getMessage());
         }

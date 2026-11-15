@@ -2,7 +2,7 @@
 // tests can run them directly).
 
 /** Largest attachment we encrypt or decrypt (Discord's free upload limit). */
-export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_FILE_BYTES = 1024 * 1024 * 1024; // 1 GiB; files are streamed natively in 64 KiB chunks
 
 /** "photo.png" -> "photo.enc.png", "notes" -> "notes.enc", "" -> "file.enc" (same as Aegires). */
 export function encryptedFileName(original: string | null | undefined): string {

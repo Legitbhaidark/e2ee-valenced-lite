@@ -114,7 +114,7 @@ function localPath(uri: string): string | null {
 
 /** Size as Android's own decoders report it (EXIF / video rotation applied). Null if unknown. */
 async function probeLocal(src: string, kind: MediaKind): Promise<Dims | null> {
-  const path = localPath(src);
+  const path = localPath(src) ?? (src.startsWith("content://") ? src : null); // native reads content:// itself
   if (!path || !nativeReady()) return null;
   try { return await nativeMediaInfo(path, kind); } catch { return null; }
 }
@@ -130,6 +130,9 @@ function dimsFromBase64(b64: string, kind: MediaKind): Dims | null {
   }
 }
 
+/** Last-resort path that loads the whole file into JS: small files only. Native streams everything else. */
+const FALLBACK_MAX_BYTES = 32 * 1024 * 1024;
+
 /** Seals the file natively into <cache>/aegires/. Resolves to the new file:// uri, its size and, when asked, the plaintext's pixel size. */
 async function sealNative(src: string, seal: Seal, want: MediaKind | null = null): Promise<{ uri: string; size: number; dims: Dims | null }> {
   if (!nativeReady()) throw new Error("native module not available");
@@ -141,9 +144,9 @@ async function sealNative(src: string, seal: Seal, want: MediaKind | null = null
   } catch (e) {
     if (String((e as any)?.message ?? e).includes("file too large")) throw e;
     // Java cannot open some uris itself (content://): read the bytes here, seal them natively.
-    const b64 = await readUriBase64(src, MAX_FILE_BYTES);
+    const b64 = await readUriBase64(src, FALLBACK_MAX_BYTES);
     if (want) dims = dimsFromBase64(b64, want);
-    size = await nativeSealBytes(seal, b64, out, MAX_FILE_BYTES);
+    size = await nativeSealBytes(seal, b64, out, FALLBACK_MAX_BYTES);
   }
   return { uri: "file://" + out, size, dims };
 }
