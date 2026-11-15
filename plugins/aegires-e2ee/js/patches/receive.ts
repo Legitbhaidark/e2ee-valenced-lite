@@ -20,6 +20,7 @@ import { noteSelfId } from "../self.ts";
 import { notify } from "../notify.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
 import { encryptAttachments } from "../outgoing.ts";
+import { clearMedia, handleAttachments } from "./media.ts";
 import { diag } from "../diag.ts";
 
 /** Ids of messages we decrypted, so edits of them stay encrypted (see send.ts). */
@@ -93,6 +94,7 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       diag.wrongKey++;
     }
   }
+  if (Array.isArray(m.attachments) && m.attachments.length) handleAttachments(m, channelId, authorId);
   // Reply previews ("replying to ...") carry their own copy of the original message.
   if (m.referenced_message) decryptMessage(m.referenced_message, channelId);
   // Forwarded messages carry snapshots of the original.
@@ -176,6 +178,7 @@ export function installReceivePatch(): () => void {
   noteFound("flux event hook", typeof hook === "function");
   if (typeof hook !== "function") throw new Error("Valenced onAnyFluxEventDispatched not found");
 
+  clearMedia(); // decrypted files left by an earlier session
   const unpatch = hook((event: any) => {
     try {
       if (handleEvent(event)) return undefined; // drop this event
@@ -187,6 +190,7 @@ export function installReceivePatch(): () => void {
   });
   return () => {
     unpatch();
+    clearMedia();
     encryptedIds.clear();
     authorById.clear();
   };

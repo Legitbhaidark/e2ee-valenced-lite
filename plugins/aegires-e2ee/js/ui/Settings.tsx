@@ -177,7 +177,7 @@ function SettingsInner() {
 
       <Card title="Behaviour">
         <ToggleRow label="Encrypt outgoing messages by default (in chats without their own on/off setting)" value={!!storage.encryptByDefault} onChange={(v) => { storage.encryptByDefault = v; refresh(); }} />
-        <ToggleRow label="Attachments (EXPERIMENTAL): encrypt files you send in encrypted chats, under random names. Showing received encrypted files is not built yet. When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
+        <ToggleRow label="Attachments (EXPERIMENTAL): encrypt files you send in encrypted chats, under random names. Received encrypted images are shown decrypted (other file types are not built yet). When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
         <ToggleRow label="Show a lock icon in front of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
         <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} />
       </Card>

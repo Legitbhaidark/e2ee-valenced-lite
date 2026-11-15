@@ -92,6 +92,26 @@ val aegiresNative = plugin {
             val mime: String by args.string()
             FileNames.encryptedName(original, mime)
         }
+
+        // Downloads a Discord CDN url (or reads a local file) and decrypts it into outPath. All strings.
+        registerNativeAsyncMethod("aegires.openfile") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val master: String by args.string()
+            val channelId: String by args.string()
+            val senderId: String by args.string()
+            val src: String by args.string()
+            val outPath: String by args.string()
+            val maxBytes: String by args.string()
+            FileOps.open(master, channelId, senderId, src, outPath, maxBytes)
+        }
+
+        // "W,H" of a decrypted image or video file, "" when unknown.
+        registerNativeAsyncMethod("aegires.mediainfo") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val path: String by args.string()
+            val kind: String by args.string()
+            MediaInfo.probe(path, kind)
+        }
     }
 
     stop {

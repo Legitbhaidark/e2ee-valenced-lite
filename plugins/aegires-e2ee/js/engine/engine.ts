@@ -118,6 +118,30 @@ export async function nativeRandomName(original: string, mime: string): Promise<
   return out;
 }
 
+/** Downloads a Discord CDN https url (or reads a local file) and decrypts it into outPath. Resolves to the plaintext size. */
+export async function nativeOpenFile(master: string, ch: string, sender: string, src: string, outPath: string, maxBytes: number): Promise<number> {
+  const out = await callNative("openfile", [master, ch, sender, src, outPath, String(maxBytes)], FILE_TIMEOUT_MS);
+  const n = Number(out);
+  if (!Number.isFinite(n)) throw new Error("native returned no size");
+  return n;
+}
+
+/** Pixel size of a decrypted image or video file, from Android's decoders. Null when unknown. */
+export async function nativeMediaInfo(path: string, kind: "image" | "video"): Promise<{ w: number; h: number } | null> {
+  const out = await callNative("mediainfo", [path, kind], 10000);
+  const m = typeof out === "string" ? /^(\d+),(\d+)$/.exec(out) : null;
+  return m ? { w: Number(m[1]), h: Number(m[2]) } : null;
+}
+
+/** Deletes a file or folder through Valenced's fs method. Never rejects. */
+export async function removePath(path: string): Promise<void> {
+  try {
+    await callRaw("valenced.fs.delete", [path], 5000);
+  } catch {
+    // Nothing to do if it cannot be deleted.
+  }
+}
+
 /** v2 message encrypt through the Java Crypto (copied from Aegires). Rejects on any failure. */
 export async function nativeV2Encrypt(master: Uint8Array, preset: number, channelId: string, senderId: string, text: string): Promise<string> {
   const out = await callNative("v2encrypt", [base64Encode(master), String(preset), channelId, senderId, base64Encode(utf8(text))], V2_TIMEOUT_MS);
