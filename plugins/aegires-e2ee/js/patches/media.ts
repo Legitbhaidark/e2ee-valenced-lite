@@ -25,6 +25,21 @@ interface Decrypted { uri: string; name: string; mime: string; size: number; w: 
 const done = new Map<string, Decrypted>(); // attachment id -> decrypted file
 const failed = new Set<string>(); // ids that did not decrypt (no retry until the plugin restarts)
 const queued = new Set<string>();
+const msgAtts = new Map<string, string[]>(); // message id -> its attachment ids (for tap events)
+
+/** Absolute path of the decrypted video a tap refers to: by attachment ids, or message id + index. */
+export function decryptedVideoPath(ids: string[], messageId?: string, index?: number): string | null {
+  const vid = (d?: Decrypted) => (d && d.mime.startsWith("video/") ? d.uri.replace(/^file:\/\//, "") : null);
+  for (const id of ids) {
+    const p = vid(done.get(id));
+    if (p) return p;
+  }
+  const list = messageId ? msgAtts.get(messageId) : undefined;
+  if (!list) return null;
+  if (index != null) return vid(done.get(list[index] ?? ""));
+  const all = list.map((id) => vid(done.get(id))).filter((p): p is string => !!p);
+  return all.length === 1 ? all[0] : null;
+}
 
 /** Settles when the folder of decrypted files left by an earlier session has been emptied. */
 let purged: Promise<void> = Promise.resolve();
@@ -114,6 +129,7 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
 // ---------------------------------------------------------------- entry points
 export function handleAttachments(m: any, channelId: string | undefined, authorId: string | undefined, tag: { w: number; h: number } | null = null): void {
   if (!attachmentsEnabled(storage.attachmentsExp) || !nativeReady() || !Array.isArray(m.attachments)) return;
+  if (m.id) msgAtts.set(String(m.id), m.attachments.map((a: any) => idOf(a)));
   const pending: Array<Promise<void>> = [];
   let tagUsed = false;
   for (const a of m.attachments) {
@@ -168,6 +184,7 @@ export function clearMedia(): void {
   done.clear();
   failed.clear();
   queued.clear();
+  msgAtts.clear();
   purged = (async () => {
     try {
       await removePath(`${await cacheDir()}/aegires/in`);

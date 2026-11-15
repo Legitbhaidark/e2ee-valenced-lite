@@ -133,6 +133,11 @@ export async function nativeMediaInfo(path: string, kind: "image" | "video"): Pr
   return m ? { w: Number(m[1]), h: Number(m[2]) } : null;
 }
 
+/** Opens the native full-screen player on a decrypted video file (absolute path). */
+export async function nativePlayVideo(path: string): Promise<void> {
+  await callNative("playvideo", [path], 5000);
+}
+
 /** Deletes a file or folder through Valenced's fs method. Never rejects. */
 export async function removePath(path: string): Promise<void> {
   try {

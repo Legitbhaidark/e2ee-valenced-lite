@@ -14,6 +14,7 @@ import { envSummary } from "./patch.ts";
 import { bindHost, unbindHost } from "./host.ts";
 import { attachStorage, detachStorage, storageNote } from "./storage.ts";
 import { startNative, stopNative } from "./engine/engine.ts";
+import { installVideoPlayer } from "./patches/player.ts";
 
 let undo: Array<() => void> = [];
 let timers: any[] = [];
@@ -57,6 +58,7 @@ export default plugin({
     if (!hasSecureRandom()) quiet("no secure random source - encrypting is impossible. Run the self-test in settings.");
     safely("send patch", installSendPatch);
     safely("receive patch", installReceivePatch);
+    safely("video player", installVideoPlayer);
     // Faster Argon2id from the native half, if it is installed and passes its self-check.
     void startNative();
     api.cleanup(unloadAll, stopNative, async () => {

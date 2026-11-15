@@ -112,9 +112,19 @@ val aegiresNative = plugin {
             val kind: String by args.string()
             MediaInfo.probe(path, kind)
         }
+
+        // Full-screen playback of a decrypted video file (path under .../aegires/). Returns "ok".
+        registerNativeMethod("aegires.playvideo") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val path: String by args.string()
+            if (!VideoPlayer.allowed(path)) throw IllegalArgumentException("path not allowed")
+            withAppActivity { VideoPlayer.show(it, path) }
+            "ok"
+        }
     }
 
     stop {
+        VideoPlayer.close()
         log.i("Aegires native crypto unloaded")
     }
 }
