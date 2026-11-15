@@ -1,0 +1,17 @@
+# Gradle / Android
+.gradle/
+build/
+plugins/*/build/
+themes/*/build/
+local.properties
+.kotlin/
+
+# JS
+node_modules/
+
+# Misc
+.DS_Store
+.idea/
+*.iml
+package-lock.json
+*.tar.gz
