@@ -12,9 +12,10 @@ import { instead, noteFound, whenFns } from "../patch.ts";
 import { notify, quiet } from "../notify.ts";
 import { storage } from "../storage.ts";
 import { diag } from "../diag.ts";
-import { ATTACHMENTS_BLOCKED_MSG } from "../features.ts";
+import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
+import { isEncryptedFileName } from "../crypto/files.ts";
 import { LOCK, getSendKey, hasGlobalKey, isEncryptionOn } from "../state.ts";
-import { BLOCK, prepare } from "../outgoing.ts";
+import { BLOCK, captionSizeTag, prepare, uploadFileName } from "../outgoing.ts";
 import { wasEncrypted } from "./receive.ts";
 import { interceptTyped } from "../commands.ts";
 
@@ -46,12 +47,19 @@ export function installSendPatch(): () => void {
         }
         if (interceptTyped(channelId, message.content)) return Promise.resolve();
         const files = attachmentsOf(message, options);
+        let tag = "";
         if (files.length && isEncryptionOn(channelId)) {
-          diag.lastSend = `with ${files.length} attachment(s) -> BLOCKED (attachments not ported yet)`;
-          notify(ATTACHMENTS_BLOCKED_MSG);
-          return Promise.resolve();
+          // Files were encrypted when they were attached (receive.ts). Anything that is not
+          // provably encrypted (or the switch being off) stops the whole send.
+          const names = files.map(uploadFileName);
+          if (!attachmentsEnabled(storage.attachmentsExp) || !names.every((n) => isEncryptedFileName(n))) {
+            diag.lastSend = `with ${files.length} attachment(s) -> BLOCKED (names: ${names.join(",").slice(0, 60) || "unreadable"})`;
+            notify(ATTACHMENTS_BLOCKED_MSG);
+            return Promise.resolve();
+          }
+          tag = captionSizeTag(files);
         }
-        const out = prepare(channelId, message.content);
+        const out = prepare(channelId, tag && typeof message.content === "string" && message.content ? tag + message.content : message.content);
         diag.lastSend = `on=${isEncryptionOn(channelId)} key=${!!getSendKey(channelId)} -> ${out === BLOCK ? "BLOCKED" : out === null ? "sent unchanged" : "encrypted"}`;
         if (storage.debug) console.log("[aegires-e2ee] sendMessage", channelId, diag.lastSend, options ? Object.keys(options) : "");
         if (out === BLOCK) return Promise.resolve();

@@ -76,6 +76,47 @@ async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: nu
 }
 
 const V2_TIMEOUT_MS = 10000;
+const FILE_TIMEOUT_MS = 120000;
+
+/** Native method outside our namespace (Valenced's own file-system methods). */
+function callRaw(name: string, args: string[], timeoutMs: number): Promise<unknown> {
+  const call = unscoped().modules?.native?.callNativeMethod;
+  if (typeof call !== "function") return Promise.reject(new Error("native bridge not available"));
+  return withTimeout(Promise.resolve(call(name, args)), timeoutMs, name);
+}
+
+/** Discord's cache directory (absolute path, no trailing slash), from Valenced's fs API. */
+export async function cacheDir(): Promise<string> {
+  const c: any = await callRaw("valenced.fs.getConstants", [], 5000);
+  const dir = String(c?.cache ?? "").replace(/\/+$/, "");
+  if (!dir.startsWith("/")) throw new Error("unknown cache directory");
+  return dir;
+}
+
+export interface FileSeal { master: string; preset: number; ch: string; sender: string }
+
+/** Encrypts a local file (path or file:// uri) into outPath with the Java v3 file format. Resolves to the encrypted size. */
+export async function nativeSealFile(s: FileSeal, src: string, outPath: string, maxBytes: number): Promise<number> {
+  const out = await callNative("sealfile", [s.master, String(s.preset), s.ch, s.sender, src, outPath, String(maxBytes)], FILE_TIMEOUT_MS);
+  const n = Number(out);
+  if (!Number.isFinite(n)) throw new Error("native returned no size");
+  return n;
+}
+
+/** Same, for plaintext that JS already read (base64). */
+export async function nativeSealBytes(s: FileSeal, plainB64: string, outPath: string, maxBytes: number): Promise<number> {
+  const out = await callNative("sealbytes", [s.master, String(s.preset), s.ch, s.sender, plainB64, outPath, String(maxBytes)], FILE_TIMEOUT_MS);
+  const n = Number(out);
+  if (!Number.isFinite(n)) throw new Error("native returned no size");
+  return n;
+}
+
+/** Random upload name "<20 hex>.enc.<ext>" (Java FileNames). */
+export async function nativeRandomName(original: string, mime: string): Promise<string> {
+  const out = await callNative("randomname", [original, mime], 5000);
+  if (typeof out !== "string" || !/^[0-9a-f]{20}\.enc(\.[a-z0-9]{1,5})?$/.test(out)) throw new Error("native returned a bad name");
+  return out;
+}
 
 /** v2 message encrypt through the Java Crypto (copied from Aegires). Rejects on any failure. */
 export async function nativeV2Encrypt(master: Uint8Array, preset: number, channelId: string, senderId: string, text: string): Promise<string> {

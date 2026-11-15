@@ -32,7 +32,7 @@ export function initStorage(): void {
   storage.channels ??= {};
   storage.encryptByDefault ??= false;
   storage.showLock ??= true;
-  storage.attachments ??= true;
+  storage.attachmentsExp ??= false; // experimental encrypted attachments, opt-in
   storage.debug ??= false;
 }
 

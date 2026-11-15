@@ -13,7 +13,7 @@ import { getSendFormat, getSendKey, getSendKeyV2, getSendPreset, isEncryptionOn 
 import { getSelfId } from "./self.ts";
 import { readUri, readUriBase64, tempName, writeCacheFile, writeCacheFileBase64 } from "./native.ts";
 import { base64Encode } from "./crypto/base64.ts";
-import { call, engineReady } from "./engine/engine.ts";
+import { cacheDir, nativeRandomName, nativeReady, nativeSealBytes, nativeSealFile, type FileSeal } from "./engine/engine.ts";
 import { diag } from "./diag.ts";
 
 export const BLOCK = Symbol("block");
@@ -98,25 +98,38 @@ function setExisting(o: any, fields: Record<string, any>): void {
 /** Encrypted temp file uri -> image size of the original (files encrypted when attached). */
 const sizes = new Map<string, { w: number; h: number } | null>();
 
-/** JS sealing (Hermes), plus the same job as arguments for the WebView engine's sealFile. */
-type Seal = { local: (plain: Uint8Array) => Uint8Array; engine: Record<string, unknown> };
+/** What the native file sealing needs: the v2 master key (base64), preset, channel and our user id. */
+type Seal = FileSeal;
 
-/** Encrypts the file in the WebView engine; null if the engine is unavailable or failed. */
-async function sealInEngine(src: string, seal: Seal, ext: string): Promise<{ uri: string; size: number } | null> {
-  if (!engineReady()) return null;
+/** Seals the file natively into <cache>/aegires/. Resolves to the new file:// uri and its size. */
+async function sealNative(src: string, seal: Seal): Promise<{ uri: string; size: number }> {
+  if (!nativeReady()) throw new Error("native module not available");
+  const out = `${await cacheDir()}/aegires/${tempName("bin")}`;
+  let size: number;
   try {
-    const data = await readUriBase64(src, MAX_FILE_BYTES);
-    const r = await call<{ data: string; size: number }>("sealFile", { ...seal.engine, data });
-    const uri = await writeCacheFileBase64(tempName(ext), r.data);
-    diag.engineJobs++;
-    return { uri, size: r.size };
+    size = await nativeSealFile(seal, src, out, MAX_FILE_BYTES);
   } catch (e) {
-    const msg = String((e as any)?.message ?? e);
-    if (msg === "file too large") throw e;
-    diag.engineFallbacks++;
-    diag.engineLastError = msg.slice(0, 80);
-    return null;
+    if (String((e as any)?.message ?? e).includes("file too large")) throw e;
+    // Java cannot open some uris itself (content://): read the bytes here, seal them natively.
+    size = await nativeSealBytes(seal, await readUriBase64(src, MAX_FILE_BYTES), out, MAX_FILE_BYTES);
   }
+  return { uri: "file://" + out, size };
+}
+
+/** Best-effort file name of an upload object (Discord's shape differs between places). */
+export function uploadFileName(u: any): string {
+  const d = descriptorOf(u);
+  return String(u?.filename ?? d?.filename ?? d?.name ?? u?.name ?? "");
+}
+
+/** "[sz:W,H]" prefix for the caption, from the first already-encrypted image among the uploads. */
+export function captionSizeTag(files: any[]): string {
+  for (const u of files) {
+    const d = descriptorOf(u);
+    const s = d ? sizes.get(d.uri) : null;
+    if (s) return makeSizeTag(s.w, s.h);
+  }
+  return "";
 }
 
 /** Encrypts one upload in place; returns the image size for the caption tag, if any. */
@@ -129,15 +142,10 @@ async function encryptUpload(u: any, seal: Seal): Promise<{ w: number; h: number
   const src: string = d.originalUri ?? d.uri;
 
   const size = mime.startsWith("image/") || imageMimeFor(name) ? await imageSize(src) : null;
-
-  let sealed = await sealInEngine(src, seal, extOf(name));
-  if (!sealed) {
-    const enc = seal.local(await readUri(src, MAX_FILE_BYTES));
-    sealed = { uri: await writeCacheFile(tempName(extOf(name)), enc), size: enc.length };
-  }
+  const sealed = await sealNative(src, seal);
   const tmp = sealed.uri;
   const encSize = sealed.size;
-  const encName = encryptedFileName(name);
+  const encName = await nativeRandomName(name, mime);
 
   setExisting(d, { uri: tmp, originalUri: tmp, filename: encName, name: encName, mimeType: ENC_MIME, type: ENC_MIME, contentType: ENC_MIME, size: encSize, fileSize: encSize });
   // Never let Discord re-compress the ciphertext as if it were a photo or video.
@@ -161,25 +169,18 @@ export function encryptAttachments(channelId: string, files: any[]): Promise<boo
  * false (the caller must then NOT send).
  */
 export async function encryptOutgoing(channelId: string, uploads: any[], captions: any[]): Promise<boolean> {
-  let seal: Seal;
-  if (getSendFormat(channelId) === "v2") {
-    // v2 file format: per-file HKDF key bound to (channel, sender), 64 KiB authenticated chunks.
-    const key = getSendKeyV2(channelId);
-    const self = getSelfId();
-    if (!key || !self) {
-      notify(key ? "Your Discord user id is not known yet - upload cancelled. Try again in a moment." : "E2EE is on for this chat but no v2 key is set - upload cancelled");
-      return false;
-    }
-    const preset = getSendPreset(channelId);
-    seal = { local: (b) => encryptFile(b, key, preset, channelId, self), engine: { fmt: "v2", key: base64Encode(key), preset: preset.index, ch: channelId, sender: self } };
-  } else {
-    const key = getSendKey(channelId);
-    if (!key) {
-      notify("E2EE is on for this chat but no key is set - upload cancelled");
-      return false;
-    }
-    seal = { local: (b) => encryptBytes(b, key), engine: { fmt: "v1", key: base64Encode(key) } };
+  if (getSendFormat(channelId) !== "v2") {
+    notify("Attachments need the v2 format in this build - upload cancelled. Switch this chat to v2 in the plugin settings.");
+    return false;
   }
+  // v2 file format: per-file HKDF key bound to (channel, sender), 64 KiB authenticated chunks.
+  const key = getSendKeyV2(channelId);
+  const self = getSelfId();
+  if (!key || !self) {
+    notify(key ? "Your Discord user id is not known yet - upload cancelled. Try again in a moment." : "E2EE is on for this chat but no v2 key is set - upload cancelled");
+    return false;
+  }
+  const seal: Seal = { master: base64Encode(key), preset: getSendPreset(channelId).index, ch: channelId, sender: self };
   try {
     let tag = "";
     for (const u of uploads) {

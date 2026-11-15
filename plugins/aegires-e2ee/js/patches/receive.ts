@@ -18,7 +18,8 @@ import { decryptMessage as decryptV2, messagePreset } from "../crypto/v2.ts";
 import { LOCK, getReceiveKeys, getReceiveKeysV2, isEncryptionOn } from "../state.ts";
 import { noteSelfId } from "../self.ts";
 import { notify } from "../notify.ts";
-import { ATTACHMENTS_BLOCKED_MSG } from "../features.ts";
+import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
+import { encryptAttachments } from "../outgoing.ts";
 import { diag } from "../diag.ts";
 
 /** Ids of messages we decrypted, so edits of them stay encrypted (see send.ts). */
@@ -100,18 +101,49 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
   }
 }
 
+const MARK = "__aegiresEncrypted";
+
+/** Discord's dispatcher, to send a held event again once its files are encrypted. */
+function dispatcher(): ((e: any) => any) | null {
+  try {
+    const d = unscoped().discord.common.flux.Dispatcher;
+    return typeof d?.dispatch === "function" ? (e: any) => d.dispatch(e) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Files being attached in an encrypted chat cannot be encrypted by this build yet, and whatever
- * upload path this Discord version uses would send them as plaintext. So the attach event is
- * dropped. Returns true to drop the event.
+ * Files being attached in an encrypted chat are encrypted right away, before any upload code
+ * sees them: the event is held back, every file is replaced by its encrypted copy (random name,
+ * "x.enc.ext", Aegires format) and the event is dispatched again with a marker. So only
+ * ciphertext can leave the phone. If anything is unknown or fails, the file is simply not
+ * attached. Returns true to drop the original event.
  */
 function interceptAttach(event: any, type: string): boolean {
   if (!/UPLOAD|ATTACH/.test(type)) return false;
   if (!diag.uploadEvents.includes(type) && diag.uploadEvents.length < 10) diag.uploadEvents.push(type);
-  if (!/ADD/.test(type)) return false;
+  if (!/ADD/.test(type) || event[MARK]) return false;
   const channelId = String(event.channelId ?? event.channel_id ?? selectedChannelId() ?? "");
   if (!channelId || !isEncryptionOn(channelId)) return false;
-  notify(ATTACHMENTS_BLOCKED_MSG);
+  if (!attachmentsEnabled(storage.attachmentsExp)) {
+    notify(ATTACHMENTS_BLOCKED_MSG);
+    return true;
+  }
+  diag.installed["attach event"] = `${type} keys=${Object.keys(event).join(",")}`.slice(0, 140);
+  const files = [event.files, event.uploads, event.items, event.attachments].find((x) => Array.isArray(x) && x.length);
+  if (!files) {
+    notify("Unknown attachment format, so it cannot be encrypted - file not attached. Turn encryption off for this chat to send it unencrypted, and report the Diagnostics output.");
+    return true;
+  }
+  const dispatch = dispatcher();
+  if (!dispatch) {
+    notify("Could not reach Discord's dispatcher, so the file cannot be encrypted - file not attached.");
+    return true;
+  }
+  encryptAttachments(channelId, files)
+    .then((ok) => { if (ok) dispatch({ ...event, [MARK]: true }); })
+    .catch((e) => console.log("[aegires-e2ee] attach error", e));
   return true;
 }
 

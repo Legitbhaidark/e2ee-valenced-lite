@@ -58,6 +58,40 @@ val aegiresNative = plugin {
             val wire: String by args.string()
             NativeOps.v2Decrypt(master, channelId, senderId, wire)
         }
+
+        // File encryption through the Java FileOps (Aegires v3 file format). All strings.
+        registerNativeAsyncMethod("aegires.sealfile") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val master: String by args.string()
+            val preset: String by args.string()
+            val channelId: String by args.string()
+            val senderId: String by args.string()
+            val src: String by args.string()
+            val outPath: String by args.string()
+            val maxBytes: String by args.string()
+            FileOps.seal(master, preset, channelId, senderId, src, outPath, maxBytes)
+        }
+
+        // Same, for plaintext that JS already read (base64), e.g. content:// uris.
+        registerNativeAsyncMethod("aegires.sealbytes") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val master: String by args.string()
+            val preset: String by args.string()
+            val channelId: String by args.string()
+            val senderId: String by args.string()
+            val plain: String by args.string()
+            val outPath: String by args.string()
+            val maxBytes: String by args.string()
+            FileOps.sealBytes(master, preset, channelId, senderId, plain, outPath, maxBytes)
+        }
+
+        // Random upload name for an encrypted file: "<20 hex>.enc.<ext>".
+        registerNativeAsyncMethod("aegires.randomname") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val original: String by args.string()
+            val mime: String by args.string()
+            FileNames.randomFor(original, mime)
+        }
     }
 
     stop {

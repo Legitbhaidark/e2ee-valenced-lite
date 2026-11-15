@@ -114,7 +114,7 @@ public final class FileOps {
         return new Limited(new BufferedInputStream(new FileInputStream(f)), max);
     }
 
-    private static long run(boolean seal, SecretKey key, int preset, String ch, String sender, String src, String outPath, long max)
+    private static long run(boolean seal, SecretKey key, int preset, String ch, String sender, String src, InputStream given, String outPath, long max)
             throws IOException {
         if (!outPath.startsWith("/")) throw new IllegalArgumentException("outPath");
         if (max < 1 || max > MAX_BYTES) max = MAX_BYTES;
@@ -124,7 +124,7 @@ public final class FileOps {
         if (dir != null) dir.mkdirs();
         HttpURLConnection[] conn = new HttpURLConnection[1];
         boolean ok = false;
-        try (InputStream in = openSource(src, seal ? max : max + (max >> 4) + 1024, conn);
+        try (InputStream in = given != null ? given : openSource(src, seal ? max : max + (max >> 4) + 1024, conn);
                 OutputStream os = new BufferedOutputStream(new FileOutputStream(part))) {
             boolean res;
             if (seal) {
@@ -156,7 +156,7 @@ public final class FileOps {
      */
     public static String open(String masterB64, String channelId, String senderId, String src, String outPath, String maxBytes) {
         try {
-            return Long.toString(run(false, masterKey(masterB64), 0, channelId, senderId, src, outPath, Long.parseLong(maxBytes)));
+            return Long.toString(run(false, masterKey(masterB64), 0, channelId, senderId, src, null, outPath, Long.parseLong(maxBytes)));
         } catch (IOException e) {
             throw new IllegalStateException(e.getMessage() == null ? "io error" : e.getMessage());
         }
@@ -165,7 +165,22 @@ public final class FileOps {
     /** Encrypts the local file src into outPath. Returns the encrypted size as a decimal string. */
     public static String seal(String masterB64, String presetIndex, String channelId, String senderId, String src, String outPath, String maxBytes) {
         try {
-            return Long.toString(run(true, masterKey(masterB64), Integer.parseInt(presetIndex), channelId, senderId, src, outPath, Long.parseLong(maxBytes)));
+            return Long.toString(run(true, masterKey(masterB64), Integer.parseInt(presetIndex), channelId, senderId, src, null, outPath, Long.parseLong(maxBytes)));
+        } catch (IOException e) {
+            throw new IllegalStateException(e.getMessage() == null ? "io error" : e.getMessage());
+        }
+    }
+
+    /**
+     * Like seal, but the plaintext arrives as base64 (for sources Java cannot open itself, such as
+     * content:// uris that JS read). Returns the encrypted size as a decimal string.
+     */
+    public static String sealBytes(String masterB64, String presetIndex, String channelId, String senderId, String plainB64, String outPath, String maxBytes) {
+        try {
+            byte[] plain = NativeOps.decode(plainB64);
+            long max = Long.parseLong(maxBytes);
+            if (plain.length > (max < 1 || max > MAX_BYTES ? MAX_BYTES : max)) throw new IOException("file too large");
+            return Long.toString(run(true, masterKey(masterB64), Integer.parseInt(presetIndex), channelId, senderId, "", new java.io.ByteArrayInputStream(plain), outPath, max));
         } catch (IOException e) {
             throw new IllegalStateException(e.getMessage() == null ? "io error" : e.getMessage());
         }
