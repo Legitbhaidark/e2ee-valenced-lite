@@ -196,103 +196,25 @@ configure(subprojects.filter { project -> pluginRoots.any { project.path.startsW
     val sdkDirProvider = extensions.getByType<LibraryAndroidComponentsExtension>().sdkComponents.sdkDirectory
     val execOps = objects.newInstance<ExecOpsProvider>().execOps
 
-    // C sources in src/main/c are compiled with the Android NDK for every ABI below. The libraries go
-    // into plugin.jar as lib/<abi>/*.so (see dexJar) and are extracted and loaded by the plugin at runtime
-    // (the host's class loader has no native library path). Plugins without src/main/c are unaffected.
-    val nativeLibsDir = layout.buildDirectory.dir("generated/native-libs").get().asFile
-    val buildNativeLibs = tasks.register("buildNativeLibs") {
-        group = "valenced"
-        description = "Compiles src/main/c with the Android NDK into lib/<abi>/*.so for plugin.jar."
-        mustRunAfter(cleanTasks)
-
-        val cDir = file("src/main/c")
-        val cSources = fileTree(cDir) { include("**/*.c", "**/*.h") }
-        inputs.files(cSources).withPropertyName("cSources").optional()
-        outputs.dir(nativeLibsDir).withPropertyName("nativeLibs")
-
-        doLast {
-            nativeLibsDir.deleteRecursively()
-            val cFiles = cSources.files.filter { it.extension == "c" }.sortedBy(File::getName)
-            if (cFiles.isEmpty()) return@doLast
-
-            val sdkDir = sdkDirProvider.get().asFile
-            val ndkHomes = listOf("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "ANDROID_NDK_LATEST_HOME")
-                .mapNotNull { System.getenv(it) }
-                .map(::File)
-            val ndkInSdk = File(sdkDir, "ndk").listFiles().orEmpty().sortedByDescending(File::getName)
-            val ndk = (ndkHomes + ndkInSdk).firstOrNull { File(it, "toolchains/llvm/prebuilt").isDirectory }
-            if (ndk == null) {
-                val msg = "Android NDK not found (set ANDROID_NDK_HOME or install one with sdkmanager). " +
-                    "Without it $path would ship without its C library and use the Java code only."
-                // On CI a missing NDK must be loud: a silently skipped library is exactly the kind of failure nobody notices.
-                if (System.getenv("CI") == "true") error(msg)
-                logger.warn(msg)
-                return@doLast
-            }
-            val hostDir = File(ndk, "toolchains/llvm/prebuilt").listFiles().orEmpty().first { File(it, "bin").isDirectory }
-            val bin = File(hostDir, "bin")
-            val api = maxOf(minSdkVer.toInt(), 21)
-            val targets = linkedMapOf(
-                "arm64-v8a" to "aarch64-linux-android",
-                "armeabi-v7a" to "armv7a-linux-androideabi",
-                "x86_64" to "x86_64-linux-android",
-            )
-            for ((abi, triple) in targets) {
-                val clang = File(bin, "$triple$api-clang")
-                require(clang.isFile) { "NDK clang not found: $clang" }
-                val outFile = File(nativeLibsDir, "lib/$abi/libaegirescrypto.so")
-                outFile.parentFile.mkdirs()
-                val flags = mutableListOf(
-                    "-O3", "-fPIC", "-shared", "-fvisibility=hidden", "-Wall",
-                    "-Wl,--build-id=none", "-Wl,--gc-sections", "-Wl,--strip-all",
-                    "-I", cDir.absolutePath,
-                )
-                // Android 15+ devices may use 16 KiB memory pages; 64-bit libraries must be aligned for that.
-                if (abi == "arm64-v8a" || abi == "x86_64") flags += "-Wl,-z,max-page-size=16384"
-                execOps.exec {
-                    commandLine(
-                        clang.absolutePath, *flags.toTypedArray(),
-                        "-o", outFile.absolutePath,
-                        *cFiles.map { it.absolutePath }.toTypedArray(),
-                    )
-                }
-                logger.lifecycle("Compiled $path C library for $abi (${outFile.length()} bytes)")
-            }
-        }
-    }
-
     tasks.register("dexJar") {
         group = "valenced"
         description = "Compiles this plugin into a DEX-containing JAR loadable by DexClassLoader."
-        dependsOn("compileReleaseKotlin", "compileReleaseJavaWithJavac", buildNativeLibs)
+        dependsOn("compileReleaseKotlin", "compileReleaseJavaWithJavac")
         mustRunAfter(cleanTasks)
 
         // Only this module's own classes are DEXed. Dependencies compileOnly.
-        // The javac output directory differs between AGP versions (AGP 9.1 writes to
-        // intermediates/javac/release/compileReleaseJavaWithJavac/classes), so ask the task itself
-        // instead of guessing. A wrong guess silently drops every .java class from the jar.
-        val javacOut = provider {
-            (tasks.getByName("compileReleaseJavaWithJavac") as org.gradle.api.tasks.compile.JavaCompile)
-                .destinationDirectory.get()
-        }
         val classDirs = files(
             // AGP 9 built-in Kotlin output, then the pre-AGP 9 location
             layout.buildDirectory.dir("intermediates/built_in_kotlinc/release/compileReleaseKotlin/classes"),
             layout.buildDirectory.dir("tmp/kotlin-classes/release"),
-            javacOut,
-            // Older javac locations, kept as fallbacks
-            layout.buildDirectory.dir("intermediates/javac/release/compileReleaseJavaWithJavac/classes"),
             layout.buildDirectory.dir("intermediates/javac/release/classes"),
+            tasks.named<JavaCompile>("compileReleaseJavaWithJavac").flatMap { it.destinationDirectory },
         )
         inputs.files(classDirs).withPropertyName("classDirs").optional()
 
         // Java resources are packaged as-is, so the plugin can read them through its class loader.
         val resources = fileTree("src/main/resources")
         inputs.files(resources).withPropertyName("resources").optional()
-
-        // Native libraries built above: lib/<abi>/*.so, packed the same way.
-        val nativeLibs = fileTree(nativeLibsDir)
-        inputs.files(nativeLibs).withPropertyName("nativeLibs").optional()
 
         val outJar = layout.buildDirectory.file("outputs/plugin/plugin.jar")
         outputs.file(outJar).withPropertyName("dexJar")
@@ -302,18 +224,6 @@ configure(subprojects.filter { project -> pluginRoots.any { project.path.startsW
         doLast {
             val classFiles = classDirs.asFileTree.matching { include("**/*.class") }.files
             if (classFiles.isEmpty()) error("No compiled classes found to dex in $path.")
-
-            // Every Java source must end up in the jar. Without this check a missing javac output
-            // directory still builds a "working" jar that only fails at runtime (NoClassDefFoundError).
-            val javaSrc = file("src/main/java")
-            if (javaSrc.isDirectory) {
-                val missing = javaSrc.walkTopDown()
-                    .filter { it.isFile && it.extension == "java" }
-                    .map { it.relativeTo(javaSrc).invariantSeparatorsPath.removeSuffix(".java") + ".class" }
-                    .filter { rel -> classFiles.none { it.invariantSeparatorsPath.endsWith("/$rel") } }
-                    .toList()
-                if (missing.isNotEmpty()) error("Java classes missing from the dex input of $path: $missing")
-            }
 
             val sdkDir = sdkDirProvider.get().asFile
             // Use newest d8 as the AGP-default build-tools could ship one too old for class files from a newer toolchain
@@ -338,21 +248,14 @@ configure(subprojects.filter { project -> pluginRoots.any { project.path.startsW
                 )
             }
 
-            if (!resources.isEmpty || !nativeLibs.isEmpty) {
+            if (!resources.isEmpty) {
                 FileSystems.newFileSystem(out.toPath()).use { jar ->
-                    for (tree in listOf(resources, nativeLibs)) {
-                        tree.visit {
-                            val target = jar.getPath(relativePath.pathString)
-                            if (isDirectory) Files.createDirectories(target)
-                            else Files.copy(file.toPath(), target)
-                        }
+                    resources.visit {
+                        val target = jar.getPath(relativePath.pathString)
+                        if (isDirectory) Files.createDirectories(target)
+                        else Files.copy(file.toPath(), target)
                     }
                 }
-            }
-
-            // A plugin with C sources must ship at least one library, or it silently runs on its fallback.
-            if (file("src/main/c").isDirectory && nativeLibs.isEmpty && System.getenv("CI") == "true") {
-                error("$path has C sources but no native library was packed into the jar.")
             }
 
             logger.lifecycle("Dexed $path -> ${out.relativeTo(rootProject.projectDir)}")
