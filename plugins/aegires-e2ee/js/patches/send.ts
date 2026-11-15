@@ -16,6 +16,7 @@ import { ATTACHMENTS_BLOCKED_MSG } from "../features.ts";
 import { LOCK, getSendKey, hasGlobalKey, isEncryptionOn } from "../state.ts";
 import { BLOCK, prepare } from "../outgoing.ts";
 import { wasEncrypted } from "./receive.ts";
+import { interceptTyped } from "../commands.ts";
 
 /** Attachments riding along with sendMessage, if any. */
 function attachmentsOf(message: any, options: any): any[] {
@@ -43,6 +44,7 @@ export function installSendPatch(): () => void {
           diag.lastSend = "hook hit but unexpected args";
           return orig(...args);
         }
+        if (interceptTyped(channelId, message.content)) return Promise.resolve();
         const files = attachmentsOf(message, options);
         if (files.length && isEncryptionOn(channelId)) {
           diag.lastSend = `with ${files.length} attachment(s) -> BLOCKED (attachments not ported yet)`;
