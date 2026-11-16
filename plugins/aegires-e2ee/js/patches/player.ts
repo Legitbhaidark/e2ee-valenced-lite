@@ -8,7 +8,7 @@
 // If neither recognises one of our files, the original handler runs unchanged.
 import { instead, whenFns } from "../patch.ts";
 import { reactModule } from "../host.ts";
-import { decryptedMedia, mediaForUri, type PlayableMedia } from "./media.ts";
+import { approveDecrypt, decryptedMedia, mediaForUri, placeholderIdFor, placeholderIdForUri, type PlayableMedia } from "./media.ts";
 import { nativePlayMedia, nativeReady } from "../engine/engine.ts";
 import { diag } from "../diag.ts";
 
@@ -29,6 +29,30 @@ function mediaIn(v: any, out: PlayableMedia[] = [], depth = 0, seen = new Set<an
   return out;
 }
 
+/** The id of one of our "tap to decrypt" / "decrypting" placeholders anywhere in v (bounded walk), if any. */
+function placeholderIn(v: any, depth = 0, seen = new Set<any>()): string | null {
+  if (typeof v === "string") return placeholderIdForUri(v);
+  if (!v || typeof v !== "object" || depth > 5 || seen.has(v)) return null;
+  seen.add(v);
+  const vals = Array.isArray(v) ? v.slice(0, 100) : Object.values(v).slice(0, 60);
+  for (const x of vals) {
+    const id = placeholderIn(x, depth + 1, seen);
+    if (id) return id;
+  }
+  return null;
+}
+
+/** A tap on a placeholder starts the decryption (or does nothing while it runs). True = tap handled. */
+function placeholderTapped(id: string | null): boolean {
+  if (!id) return false;
+  try {
+    return approveDecrypt(id);
+  } catch (e) {
+    note("decrypt tap failed: " + String((e as any)?.message ?? e).slice(0, 80));
+    return false;
+  }
+}
+
 /** The media the viewer opens on: the item at the start index if the args name one, else the only one. */
 function pickMedia(args: any[]): PlayableMedia | null {
   const all = mediaIn(args);
@@ -42,10 +66,8 @@ function pickMedia(args: any[]): PlayableMedia | null {
   return all.length === 1 ? all[0] : null;
 }
 
-/** The media for a chat-list tap event: our picture / file uri in it, else attachment ids / message id + index. */
-function mediaForTap(ne: any): PlayableMedia | null {
-  const direct = mediaIn(ne)[0];
-  if (direct) return direct;
+/** Strings / numbers in a tap event (attachment ids, message id), the message id, and the attachment index. */
+function tapRefs(ne: any): { ids: string[]; msg?: string; index?: number } {
   const ids: string[] = [];
   const walk = (v: any, d: number) => {
     if (v == null || d > 3) return;
@@ -55,7 +77,23 @@ function mediaForTap(ne: any): PlayableMedia | null {
   walk(ne, 0);
   const idx = Object.keys(ne ?? {}).find((k) => /index/i.test(k) && typeof ne[k] === "number");
   const msg = ne?.messageId ?? ne?.message_id;
-  return decryptedMedia(ids, msg != null ? String(msg) : undefined, idx ? ne[idx] : undefined);
+  return { ids, msg: msg != null ? String(msg) : undefined, index: idx ? ne[idx] : undefined };
+}
+
+/** The placeholder for a chat-list tap event: our picture uri in it, else attachment ids / message id + index. */
+function placeholderForTap(ne: any): string | null {
+  const direct = placeholderIn(ne);
+  if (direct) return direct;
+  const r = tapRefs(ne);
+  return placeholderIdFor(r.ids, r.msg, r.index);
+}
+
+/** The media for a chat-list tap event: our picture / file uri in it, else attachment ids / message id + index. */
+function mediaForTap(ne: any): PlayableMedia | null {
+  const direct = mediaIn(ne)[0];
+  if (direct) return direct;
+  const r = tapRefs(ne);
+  return decryptedMedia(r.ids, r.msg, r.index);
 }
 
 function play(m: PlayableMedia): boolean {
@@ -83,6 +121,7 @@ function wrapTaps(props: any): any {
       }
       if (/Image|Media|Attachment|Video/i.test(k)) {
         try {
+          if (placeholderTapped(placeholderForTap(ne))) return undefined;
           const p = mediaForTap(ne);
           if (p && play(p)) return undefined;
         } catch (err) {
@@ -106,6 +145,7 @@ export function installVideoPlayer(): () => void {
   undo.push(whenFns(["openMediaModal"], (mod) => {
     undo.push(instead("openMediaModal", mod, (args, orig) => {
       try {
+        if (placeholderTapped(placeholderIn(args))) return undefined;
         const p = pickMedia(args);
         if (p && play(p)) return undefined;
       } catch (e) {

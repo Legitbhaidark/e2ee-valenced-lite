@@ -32,7 +32,7 @@ const { bindHost, unbindHost } = await import("../js/host.ts");
 const { attachStorage, storage } = await import("../js/storage.ts");
 const { initStorage } = await import("../js/state.ts");
 const { startNative, stopNative, nativeReady } = await import("../js/engine/engine.ts");
-const { handleAttachments, clearMedia, mediaForUri, decryptedMedia } = await import("../js/patches/media.ts");
+const { handleAttachments, clearMedia, mediaForUri, decryptedMedia, placeholderIdForUri, placeholderIdFor, approveDecrypt, autoDecryptBytes } = await import("../js/patches/media.ts");
 const { firstLinkUrl, embedFor, handleLinkPreviews, clearLinkPreviews } = await import("../js/patches/embeds.ts");
 
 const ok = (m) => console.log("  ok  " + m);
@@ -46,6 +46,9 @@ const calls = [];
 const dispatched = [];
 let previewReply = '{"title":"Hello","description":"World","image":"https://example.com/i.png","site":"Example","w":1200,"h":630}';
 let thumbFails = false;
+let openDelay = 0;
+let openFail = "";
+let progressReply = "";
 
 const bridge = async (name, args) => {
   calls.push({ name, args });
@@ -56,7 +59,12 @@ const bridge = async (name, args) => {
     case "aegires.argon2engine": return "c:arm64-v8a";
     case "valenced.fs.getConstants": return { cache: "/data/cache" };
     case "valenced.fs.delete": return "";
-    case "aegires.openfile": return "1234";
+    case "aegires.openfile":
+      if (openDelay) await new Promise((r) => setTimeout(r, openDelay));
+      if (openFail) throw new Error(openFail);
+      return "1234";
+    case "aegires.progress": return progressReply;
+    case "aegires.placeholder": return args[0] === "audio" ? "720,216" : "640,360";
     case "aegires.mediainfo": return args[1] === "video" ? "1080,1920" : "640,480";
     case "aegires.mediathumb":
       if (thumbFails) throw new Error("no video frame");
@@ -142,7 +150,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   const m = message("m3", [att("113", "My Song.enc.m4a"), att("114", "0123456789abcdef0123.enc.mp3")]);
   handleAttachments(m, CH, AUTHOR, null);
   await tick(80);
-  const upd = dispatched.find((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m3");
+  const upd = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m3").pop();
   assert.ok(upd);
   const [a, b] = upd.message.attachments;
   assert.equal(a.url, "file:///data/cache/aegires/in/113.thumb.jpg");
@@ -161,13 +169,121 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 // ---------------------------------------------------------------- 4. audio thumbnail failure is a failed attachment
 {
   thumbFails = true;
-  const before = dispatched.length;
   const m = message("m4", [att("115", "x.enc.mp3")]);
   handleAttachments(m, CH, AUTHOR, null);
   await tick(50);
-  assert.equal(dispatched.length, before, "nothing is rewritten when an audio card cannot be made");
+  const last = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m4").pop();
+  assert.equal(last.message.attachments[0].url, att("115", "x.enc.mp3").url, "the original file card is shown again");
   thumbFails = false;
-  ok("audio without a card is left alone (no half-rewritten attachment)");
+  ok("audio without a card: the original attachment is restored, not half rewritten");
+}
+
+// ---------------------------------------------------------------- 4b. tap to decrypt (large files)
+{
+  assert.equal(autoDecryptBytes(), 25 * 1048576);
+  storage.autoDecryptMB = "";
+  assert.equal(autoDecryptBytes(), 25 * 1048576, "empty means the default");
+  storage.autoDecryptMB = "junk";
+  assert.equal(autoDecryptBytes(), 25 * 1048576, "junk means the default");
+  storage.autoDecryptMB = 100;
+  assert.equal(autoDecryptBytes(), 100 * 1048576);
+  storage.autoDecryptMB = 25;
+
+  calls.length = 0;
+  const big = att("120", "0123456789abcdef0123.enc.mp4");
+  big.size = 60 * 1048576;
+  const m = message("m5", [big]);
+  handleAttachments(m, CH, AUTHOR, null);
+  handleAttachments(message("m5", [{ ...big }]), CH, AUTHOR, null); // a second event while it is being drawn
+  await tick(50);
+  assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 0, "nothing is downloaded before the tap");
+  const drawn = calls.filter((c) => c.name === "aegires.placeholder");
+  assert.equal(drawn.length, 1, "drawn once, not once per event");
+  assert.deepEqual(drawn[0].args.slice(0, 4), ["video", "tap", "-1", String(60 * 1048576)]);
+  const up = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m5").pop();
+  const a = up.message.attachments[0];
+  assert.match(a.url, /\/aegires\/in\/120\.ph\d+\.jpg$/);
+  assert.equal(a.filename, "encrypted-video.jpg");
+  assert.equal(a.width, 640);
+  assert.equal(a.height, 360);
+  ok("a file above the limit shows 'Tap to decrypt' and is NOT downloaded");
+
+  // later events re-apply the placeholder synchronously
+  const again = message("m5", [{ ...big }]);
+  handleAttachments(again, CH, AUTHOR, null);
+  assert.equal(again.attachments[0].url, a.url);
+  ok("the placeholder is re-applied at once on the next event");
+
+  // tap resolution
+  assert.equal(placeholderIdForUri(a.url + "?x=1"), "120");
+  assert.equal(placeholderIdForUri("file:///data/cache/aegires/in/999.ph1.jpg"), null);
+  assert.equal(placeholderIdFor(["120"]), "120");
+  assert.equal(placeholderIdFor([], "m5", 0), "120");
+  assert.equal(placeholderIdFor(["nope"]), null);
+  ok("tap resolution: by picture uri, attachment id, or message id + index");
+
+  // the tap starts the work
+  assert.equal(approveDecrypt("120"), true);
+  assert.equal(approveDecrypt("120"), true, "a second tap while working is swallowed, not restarted");
+  await tick(80);
+  assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 1);
+  const fin = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m5").pop();
+  assert.equal(fin.message.attachments[0].url, "file:///data/cache/aegires/in/120.thumb.jpg");
+  assert.equal(approveDecrypt("not-a-placeholder"), false);
+  ok("tap decrypts the file; the finished picture (with play button) replaces the placeholder");
+
+  // limit 0 = ask for everything
+  storage.autoDecryptMB = 0;
+  calls.length = 0;
+  handleAttachments(message("m6", [att("121", "0123456789abcdef0123.enc.png")]), CH, AUTHOR, null);
+  await tick(50);
+  assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 0);
+  assert.equal(calls.filter((c) => c.name === "aegires.placeholder")[0].args[0], "image");
+  storage.autoDecryptMB = 25;
+  ok("limit 0: even a small file waits for a tap");
+}
+
+// ---------------------------------------------------------------- 4c. progress placeholder for slow files
+{
+  calls.length = 0;
+  openDelay = 1700;
+  progressReply = "0,100";
+  const sa = att("130", "0123456789abcdef0123.enc.mp4");
+  sa.size = 1048576;
+  handleAttachments(message("m7", [sa]), CH, AUTHOR, null);
+  await tick(200);
+  assert.equal(calls.filter((c) => c.name === "aegires.placeholder").length, 0, "no placeholder in the first moment");
+  await tick(500); // 450 ms passed
+  let work = calls.filter((c) => c.name === "aegires.placeholder");
+  assert.equal(work.length, 1);
+  assert.deepEqual(work[0].args.slice(0, 3), ["video", "work", "0"]);
+  progressReply = "40,100";
+  await tick(700);
+  progressReply = "41,100"; // under +3 points: no redraw
+  await tick(700);
+  work = calls.filter((c) => c.name === "aegires.placeholder");
+  assert.deepEqual(work.map((c) => c.args[2]), ["0", "40"], "redrawn when the percentage moved by 3 or more");
+  await tick(500); // finished (1700 ms)
+  const last = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7").pop();
+  assert.equal(last.message.attachments[0].url, "file:///data/cache/aegires/in/130.thumb.jpg");
+  const before = calls.filter((c) => c.name === "aegires.placeholder").length;
+  await tick(900);
+  assert.equal(calls.filter((c) => c.name === "aegires.placeholder").length, before, "no more redraws after it finished");
+  openDelay = 0;
+  progressReply = "";
+  ok("slow file: progress placeholder after 450 ms, redrawn on progress, replaced by the result, then silent");
+}
+
+// ---------------------------------------------------------------- 4d. failed decryption brings the file card back
+{
+  openFail = "decrypt failed";
+  const f = att("140", "0123456789abcdef0123.enc.mp4");
+  handleAttachments(message("m8", [f]), CH, AUTHOR, null);
+  await tick(80);
+  const last = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m8").pop();
+  assert.equal(last.message.attachments[0].url, f.url);
+  openFail = "";
+  ok("a failed decryption restores the original attachment");
 }
 
 // ---------------------------------------------------------------- 5. link url extraction

@@ -177,6 +177,24 @@ export async function nativeMediaThumb(kind: "video" | "audio", src: string, out
   return { w: Number(m[1]), h: Number(m[2]) };
 }
 
+/** Fraction (0-100) of the running decryption into outPath, or null when none is running / the size is unknown. */
+export async function nativeProgress(outPath: string): Promise<number | null> {
+  const out = await callNative("progress", [outPath], 3000);
+  const m = typeof out === "string" ? /^(\d+),(-?\d+)$/.exec(out) : null;
+  if (!m) return null;
+  const read = Number(m[1]);
+  const total = Number(m[2]);
+  return total > 0 ? Math.max(0, Math.min(100, Math.floor((read / total) * 100))) : null;
+}
+
+/** Writes the "not decrypted yet" picture (state "tap" or "work") for a file of the given kind; resolves to its pixel size. */
+export async function nativePlaceholder(kind: "image" | "video" | "audio", state: "tap" | "work", percent: number | null, sizeBytes: number, outPath: string): Promise<{ w: number; h: number }> {
+  const out = await callNative("placeholder", [kind, state, String(percent ?? -1), String(Math.max(0, Math.floor(sizeBytes))), outPath], 15000);
+  const m = typeof out === "string" ? /^(\d+),(\d+)$/.exec(out) : null;
+  if (!m || !Number(m[1]) || !Number(m[2])) throw new Error("native returned no picture size");
+  return { w: Number(m[1]), h: Number(m[2]) };
+}
+
 export interface LinkPreviewData { title?: string; description?: string; image?: string; site?: string; w?: number; h?: number }
 
 /** Title / description / picture of one https page, read by the native half ON THIS DEVICE. Null when the page has none. */

@@ -137,6 +137,7 @@ function SettingsInner() {
   const [benchMiB, setBenchMiB] = React.useState("8");
   const [benchJs, setBenchJs] = React.useState(false);
   const [benchLines, setBenchLines] = React.useState([] as string[]);
+  const [autoMb, setAutoMb] = React.useState(String(storage.autoDecryptMB ?? 25));
   const [kdfMem, setKdfMem] = React.useState(String(storage.devKdfMemMiB ?? 64));
   const [kdfPasses, setKdfPasses] = React.useState(String(storage.devKdfPasses ?? 3));
   const [pct, setPct] = React.useState(-1); // Argon2id progress, -1 = idle
@@ -219,6 +220,8 @@ function SettingsInner() {
         <ToggleRow label="Encrypt outgoing messages by default (in chats without their own on/off setting)" value={!!storage.encryptByDefault} onChange={(v) => { storage.encryptByDefault = v; refresh(); }} />
         <ToggleRow label="Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
         <ToggleRow label="Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default" value={!!storage.linkPreviews} onChange={(v) => { storage.linkPreviews = v; if (!v) clearLinkPreviews(); refresh(); }} />
+        <Text style={{ color: C.text, marginTop: 8 }}>Encrypted files larger than this many MB show "Tap to decrypt" instead of downloading on their own (0 = always ask, default 25):</Text>
+        <Field value={autoMb} onChange={(v) => { const d = v.replace(/[^0-9]/g, "").slice(0, 4); setAutoMb(d); storage.autoDecryptMB = d === "" ? 25 : Number(d); }} placeholder="MB (default 25)" />
         <ToggleRow label="Show a lock icon next to the time of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
         {DEV_BUILD ? <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} /> : null}
       </Card>

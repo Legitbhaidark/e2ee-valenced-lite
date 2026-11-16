@@ -175,6 +175,116 @@ internal object MediaThumb {
         return bmp
     }
 
+    // ------------------------------------------------------------------ placeholder
+
+    /**
+     * The picture shown in place of a file that is not decrypted yet: a dark "skeleton" card with a
+     * round badge and two lines of text. [state] "tap" = waiting for a tap (download arrow),
+     * "work" = decrypting (progress ring with the percentage inside; [percent] -1 = unknown).
+     * [sizeBytes] is the encrypted file size, 0 = unknown. Writes a JPEG and returns "W,H".
+     */
+    fun placeholder(kind: String, state: String, percent: Int, sizeBytes: Long, out: String): String {
+        if (!VideoPlayer.allowed(out)) throw IllegalArgumentException("path not allowed")
+        val w = if (kind == "audio") CARD_W else 640
+        val h = if (kind == "audio") CARD_H else 360
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        try {
+            val c = Canvas(bmp)
+            c.drawColor(0xFF1E1F22.toInt())
+
+            // Skeleton blocks: faint bars like a loading card.
+            val bar = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2B2D31.toInt() }
+            c.drawRoundRect(RectF(w * 0.06f, h * 0.08f, w * 0.46f, h * 0.08f + h * 0.05f), 12f, 12f, bar)
+            c.drawRoundRect(RectF(w * 0.06f, h * 0.16f, w * 0.30f, h * 0.16f + h * 0.04f), 10f, 10f, bar)
+
+            val label = when (kind) {
+                "video" -> "video"
+                "audio" -> "audio"
+                else -> "image"
+            }
+            val cx = if (kind == "audio") 108f else w / 2f
+            val cy = if (kind == "audio") h / 2f else h * 0.42f
+            val radius = if (kind == "audio") 56f else minOf(w, h) * 0.17f
+
+            // Round badge with a ring.
+            c.drawCircle(cx, cy, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2B2D31.toInt() })
+            val ringW = radius * 0.16f
+            val ringRect = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
+            ringRect.inset(ringW / 2f, ringW / 2f)
+            val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = ringW
+                color = 0xFF3F4147.toInt()
+            }
+            c.drawArc(ringRect, 0f, 360f, false, ring)
+            val accent = 0xFF5865F2.toInt()
+            if (state == "work") {
+                ring.color = accent
+                ring.strokeCap = Paint.Cap.ROUND
+                val sweep = if (percent < 0) 90f else 360f * percent.coerceIn(0, 100) / 100f
+                c.drawArc(ringRect, -90f, maxOf(sweep, 4f), false, ring)
+                val pp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    textSize = radius * 0.62f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    textAlign = Paint.Align.CENTER
+                }
+                val txt = if (percent < 0) "\u2026" else "$percent%"
+                c.drawText(txt, cx, cy - (pp.ascent() + pp.descent()) / 2f, pp)
+            } else {
+                // "tap" state: a down arrow into a tray.
+                val arrow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    style = Paint.Style.STROKE
+                    strokeWidth = radius * 0.13f
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                }
+                val s = radius * 0.42f
+                val p = Path().apply {
+                    moveTo(cx, cy - s)
+                    lineTo(cx, cy + s * 0.55f)
+                    moveTo(cx - s * 0.62f, cy - s * 0.05f)
+                    lineTo(cx, cy + s * 0.6f)
+                    lineTo(cx + s * 0.62f, cy - s * 0.05f)
+                    moveTo(cx - s * 0.8f, cy + s * 1.0f)
+                    lineTo(cx + s * 0.8f, cy + s * 1.0f)
+                }
+                c.drawPath(p, arrow)
+            }
+
+            // Text.
+            val title = if (state == "work") "Decrypting $label\u2026" else "Tap to decrypt"
+            val sub = if (sizeBytes > 0) "Encrypted $label \u00B7 ${formatSize(sizeBytes)}" else "Encrypted $label"
+            val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = if (kind == "audio") 36f else h * 0.075f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            val sp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0xFFB5BAC1.toInt()
+                textSize = if (kind == "audio") 27f else h * 0.058f
+            }
+            if (kind == "audio") {
+                val left = 200f
+                val maxText = w - left - 28f
+                c.drawText(TextUtils.ellipsize(title, tp, maxText, TextUtils.TruncateAt.END).toString(), left, cy - 16f, tp)
+                c.drawText(TextUtils.ellipsize(sub, sp, maxText, TextUtils.TruncateAt.END).toString(), left, cy + 38f, sp)
+            } else {
+                tp.textAlign = Paint.Align.CENTER
+                sp.textAlign = Paint.Align.CENTER
+                c.drawText(title, w / 2f, h * 0.78f, tp)
+                c.drawText(sub, w / 2f, h * 0.78f + h * 0.095f, sp)
+            }
+
+            File(out).parentFile?.mkdirs()
+            FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+            return "${bmp.width},${bmp.height}"
+        } finally {
+            bmp.recycle()
+        }
+    }
+
     // ------------------------------------------------------------------ helpers
 
     fun formatLength(ms: Long): String {

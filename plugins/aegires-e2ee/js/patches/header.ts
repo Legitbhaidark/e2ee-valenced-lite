@@ -22,37 +22,8 @@ import { wasEncrypted } from "./receive.ts";
 let routes = "";
 let marked = 0;
 let shape = "";
-const strippedFields: string[] = [];
 const note = (msg: string) => { diag.installed["header lock"] = msg; };
-const status = (extra = "") => note([routes || "no route yet", marked ? `marked ${marked} rows` : "", strippedFields.length ? "front lock removed from: " + strippedFields.join(",") : "", shape, extra].filter(Boolean).join(" | "));
-
-/**
- * Removes a leading lock from every text value of a row (at any depth), except the time itself.
- * Discord's native rows keep message text in nested nodes, so this walks the whole row. The paths
- * where a lock was found are shown in Diagnostics. True if anything changed.
- */
-function stripTextLock(node: any, path = "row", depth = 0): boolean {
-  if (!node || typeof node !== "object" || depth > 8) return false;
-  let changed = false;
-  for (const k of Object.keys(node)) {
-    if (k === "timestamp" || k === "timestampText") continue;
-    const v = node[k];
-    if (typeof v === "string") {
-      if (v.startsWith(LOCK)) {
-        node[k] = v.slice(LOCK.length);
-        changed = true;
-        const where = (path + "." + k).replace(/\.\d+/g, "[]");
-        if (!strippedFields.includes(where) && strippedFields.length < 4) {
-          strippedFields.push(where);
-          status();
-        }
-      }
-    } else if (v && typeof v === "object") {
-      if (stripTextLock(v, path + "." + k, depth + 1)) changed = true;
-    }
-  }
-  return changed;
-}
+const status = (extra = "") => note([routes || "no route yet", marked ? `marked ${marked} rows` : "", shape, extra].filter(Boolean).join(" | "));
 
 /** Puts the lock in front of the time text of a row of a decrypted message. True if it changed the row. */
 function mark(row: any): boolean {
@@ -67,10 +38,7 @@ function mark(row: any): boolean {
   for (const k of ["timestamp", "timestampText"]) {
     const t = msg[k];
     if (typeof t === "string") {
-      // The lock now lives next to the time, so remove any lock left in front of the text. Messages
-      // decrypted before this hook was ready (or while it was off) carry one in their cached content.
-      const stripped = stripTextLock(row);
-      if (t.startsWith(LOCK)) return stripped;
+      if (t.startsWith(LOCK)) return false;
       msg[k] = LOCK + t;
       marked++;
       if (marked === 1 || marked % 20 === 0) status();
@@ -224,7 +192,6 @@ export function installHeaderLock(): () => void {
     routes = "";
     marked = 0;
     shape = "";
-    strippedFields.length = 0;
     lockMode.header = false;
     lockMode.front = false;
   };

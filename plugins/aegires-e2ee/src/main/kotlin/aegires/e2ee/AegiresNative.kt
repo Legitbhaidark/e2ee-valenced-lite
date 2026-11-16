@@ -193,6 +193,26 @@ val aegiresNative = plugin {
             MediaThumb.make(kind, src, outPath, label)
         }
 
+        // Picture shown in place of a file that is not decrypted yet ("Tap to decrypt" or a progress ring).
+        // percent -1 = unknown, sizeBytes 0 = unknown. Written as a JPEG under .../aegires/. Returns "W,H".
+        registerNativeAsyncMethod("aegires.placeholder") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val kind: String by args.string()
+            val state: String by args.string()
+            val percent: String by args.string()
+            val sizeBytes: String by args.string()
+            val outPath: String by args.string()
+            MediaThumb.placeholder(kind, state, percent.toIntOrNull() ?: -1, sizeBytes.toLongOrNull() ?: 0L, outPath)
+        }
+
+        // "read,total" bytes of the decryption into outPath that is running right now, "" if none.
+        registerNativeMethod("aegires.progress") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val outPath: String by args.string()
+            if (!VideoPlayer.allowed(outPath)) throw IllegalArgumentException("path not allowed")
+            FileOps.progress(outPath)
+        }
+
         // Full-screen playback of a decrypted video or audio file, with a title for audio. Returns "ok".
         registerNativeMethod("aegires.playmedia") { rawArgs ->
             val args = rawArgs.asDelegate()
