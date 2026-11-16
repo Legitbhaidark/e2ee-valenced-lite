@@ -223,6 +223,17 @@ val aegiresNative = plugin {
             "ok"
         }
 
+        // The "E2EE" on/off button next to the search icon. State: on | off | locked | hide. Returns "ok".
+        registerNativeMethod("aegires.encbutton") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val state: String by args.string()
+            withAppActivity { EncryptButton.set(it, state) }
+            "ok"
+        }
+
+        // How many times the button was pressed since the last call.
+        registerNativeMethod("aegires.encbuttontaps") { _ -> EncryptButton.takeTaps().toString() }
+
         // Link preview data (title, description, picture) for one https url, as JSON; "" if none.
         registerNativeAsyncMethod("aegires.linkpreview") { rawArgs ->
             val args = rawArgs.asDelegate()
@@ -242,6 +253,7 @@ val aegiresNative = plugin {
 
     stop {
         VideoPlayer.close()
+        EncryptButton.remove(null)
         log.i("Aegires native crypto unloaded")
     }
 }

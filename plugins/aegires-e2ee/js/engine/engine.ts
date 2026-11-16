@@ -187,6 +187,18 @@ export async function nativeProgress(outPath: string): Promise<number | null> {
   return total > 0 ? Math.max(0, Math.min(100, Math.floor((read / total) * 100))) : null;
 }
 
+/** Sets the header "E2EE" button (native overlay): "on" | "off" | "locked" | "hide". */
+export async function nativeEncButton(state: "on" | "off" | "locked" | "hide"): Promise<void> {
+  await callNative("encbutton", [state], 3000);
+}
+
+/** Presses of the header button since the last call. */
+export async function nativeEncButtonTaps(): Promise<number> {
+  const out = await callNative("encbuttontaps", [], 3000);
+  const n = typeof out === "string" ? parseInt(out, 10) : Number(out);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** Writes the "not decrypted yet" picture (state "tap" or "work") for a file of the given kind; resolves to its pixel size. */
 export async function nativePlaceholder(kind: "image" | "video" | "audio", state: "tap" | "work", percent: number | null, sizeBytes: number, outPath: string): Promise<{ w: number; h: number }> {
   const out = await callNative("placeholder", [kind, state, String(percent ?? -1), String(Math.max(0, Math.floor(sizeBytes))), outPath], 15000);
