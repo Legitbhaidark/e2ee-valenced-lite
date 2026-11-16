@@ -28,6 +28,7 @@ import { benchCrypto, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
 import { getKdfOverride } from "../crypto/kdf2.ts";
 import { diag, diagLines } from "../diag.ts";
 import { EngineHost } from "../engine/engine.ts";
+import { clearLinkPreviews } from "../patches/embeds.ts";
 import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "../about.ts";
 
 // React Native binds after this script is evaluated, so each primitive is resolved at render time.
@@ -217,6 +218,7 @@ function SettingsInner() {
       <Card title="Behaviour">
         <ToggleRow label="Encrypt outgoing messages by default (in chats without their own on/off setting)" value={!!storage.encryptByDefault} onChange={(v) => { storage.encryptByDefault = v; refresh(); }} />
         <ToggleRow label="Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
+        <ToggleRow label="Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default" value={!!storage.linkPreviews} onChange={(v) => { storage.linkPreviews = v; if (!v) clearLinkPreviews(); refresh(); }} />
         <ToggleRow label="Show a lock icon next to the time of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
         {DEV_BUILD ? <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} /> : null}
       </Card>

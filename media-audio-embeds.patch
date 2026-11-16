@@ -1,0 +1,1560 @@
+diff --git a/plugins/aegires-e2ee/js/about.ts b/plugins/aegires-e2ee/js/about.ts
+index 9dbb8ba..ee95021 100644
+--- a/plugins/aegires-e2ee/js/about.ts
++++ b/plugins/aegires-e2ee/js/about.ts
+@@ -1,4 +1,4 @@
+ // Shown in the "Plugin versions" card of the settings. Keep PLUGIN_VERSION in step with manifest.json.
+ export const DEVELOPER = "Dark (system32crowdstrikewin11)";
+-export const PLUGIN_VERSION = "0.1.25";
++export const PLUGIN_VERSION = "0.1.26";
+ export const BUILD_NUMBER = "26110122"; // YYMM + (minor * 100 + patch); shown as text
+diff --git a/plugins/aegires-e2ee/js/crypto/files.ts b/plugins/aegires-e2ee/js/crypto/files.ts
+index 8c33c39..2ee6de8 100644
+--- a/plugins/aegires-e2ee/js/crypto/files.ts
++++ b/plugins/aegires-e2ee/js/crypto/files.ts
+@@ -89,6 +89,11 @@ const MIME: Record<string, string> = {
+   ogg: "audio/ogg",
+   m4a: "audio/mp4",
+   wav: "audio/wav",
++  aac: "audio/aac",
++  flac: "audio/flac",
++  opus: "audio/opus",
++  oga: "audio/ogg",
++  amr: "audio/amr",
+   pdf: "application/pdf",
+   txt: "text/plain",
+   zip: "application/zip",
+diff --git a/plugins/aegires-e2ee/js/engine/engine.ts b/plugins/aegires-e2ee/js/engine/engine.ts
+index 32378a6..0c5c186 100644
+--- a/plugins/aegires-e2ee/js/engine/engine.ts
++++ b/plugins/aegires-e2ee/js/engine/engine.ts
+@@ -150,6 +150,32 @@ export async function nativePlayVideo(path: string): Promise<void> {
+   await callNative("playvideo", [path], 5000);
+ }
+ 
++/** Opens the native full-screen player on a decrypted video or audio file. The title is shown for audio. */
++export async function nativePlayMedia(path: string, title: string): Promise<void> {
++  await callNative("playmedia", [path, title], 5000);
++}
++
++/**
++ * Writes the chat picture of a decrypted video (first frame + play button + length) or audio file
++ * (a card with title and length) to outPath as a JPEG. Resolves to the picture's pixel size.
++ */
++export async function nativeMediaThumb(kind: "video" | "audio", src: string, outPath: string, label: string): Promise<{ w: number; h: number }> {
++  const out = await callNative("mediathumb", [kind, src, outPath, label], 60000);
++  const m = typeof out === "string" ? /^(\d+),(\d+)$/.exec(out) : null;
++  if (!m || !Number(m[1]) || !Number(m[2])) throw new Error("native returned no picture size");
++  return { w: Number(m[1]), h: Number(m[2]) };
++}
++
++export interface LinkPreviewData { title?: string; description?: string; image?: string; site?: string; w?: number; h?: number }
++
++/** Title / description / picture of one https page, read by the native half ON THIS DEVICE. Null when the page has none. */
++export async function nativeLinkPreview(url: string): Promise<LinkPreviewData | null> {
++  const out = await callNative("linkpreview", [url], 20000);
++  if (typeof out !== "string" || !out) return null;
++  const d = JSON.parse(out);
++  return d && typeof d === "object" ? (d as LinkPreviewData) : null;
++}
++
+ /** Deletes a file or folder through Valenced's fs method. Never rejects. */
+ export async function removePath(path: string): Promise<void> {
+   try {
+diff --git a/plugins/aegires-e2ee/js/patches/embeds.ts b/plugins/aegires-e2ee/js/patches/embeds.ts
+new file mode 100644
+index 0000000..91963e8
+--- /dev/null
++++ b/plugins/aegires-e2ee/js/patches/embeds.ts
+@@ -0,0 +1,151 @@
++// LINK PREVIEWS for decrypted messages (opt-in, "Link previews" in the plugin settings).
++//
++// Discord's servers only ever see "§<ciphertext>", so they never build an embed for a link inside
++// an encrypted message. When this is switched on, the first https link of a decrypted message is
++// looked up by the native half (Java LinkPreview: Open Graph / Twitter-card tags) and the result is
++// attached to the message as an ordinary embed, through a partial MESSAGE_UPDATE like the one
++// media.ts uses for files.
++//
++// Privacy: the lookup is made by THIS PHONE, so the linked site sees its IP address and the time,
++// and the preview picture is loaded from the site directly (not through Discord's media proxy).
++// That is why it is off by default. A link written as <https://...> gets no preview (Discord's
++// own "no embed" syntax). Only https links are fetched, and never addresses inside a private network.
++import { storage } from "../storage.ts";
++import { unscoped } from "../host.ts";
++import { nativeLinkPreview, nativeReady, type LinkPreviewData } from "../engine/engine.ts";
++import { diag } from "../diag.ts";
++
++const MAX_PARALLEL = 2;
++const MAX_QUEUE = 30; // history loads can hold many links; the newest are looked up first
++const MAX_URL = 2000;
++
++const cache = new Map<string, LinkPreviewData | null>(); // url -> preview; null = looked up, nothing to show
++const waiting = new Map<string, Array<{ id: string; channel: string }>>(); // url -> messages waiting for it
++const queue: string[] = [];
++const inFlight = new Set<string>(); // urls being looked up right now
++let running = 0;
++let generation = 0; // bumped on clear so late answers of an earlier run are ignored
++const stats = { fetched: 0, empty: 0, failed: 0, shown: 0, lastError: "" };
++
++const note = () => {
++  diag.installed["link previews"] = storage.linkPreviews
++    ? `on - ${stats.shown} shown, ${stats.fetched} fetched, ${stats.empty} without data, ${stats.failed} failed${stats.lastError ? " (" + stats.lastError + ")" : ""}`
++    : "off";
++};
++
++/** First https link of a text that should get a preview, or null. */
++export function firstLinkUrl(text: unknown): string | null {
++  if (typeof text !== "string" || !text.includes("https://")) return null;
++  const re = /(<?)(https:\/\/[^\s<>]+)(>?)/g;
++  let m: RegExpExecArray | null;
++  while ((m = re.exec(text))) {
++    if (m[1] === "<" && m[3] === ">") continue; // <https://...> = "no preview"
++    let url = m[2];
++    // Trailing punctuation belongs to the sentence, not the link; a ")" only if the link has no "(".
++    for (;;) {
++      const last = url[url.length - 1];
++      if (/[.,;:!?'"\]}]/.test(last) || (last === ")" && !url.includes("("))) url = url.slice(0, -1);
++      else break;
++    }
++    if (url.length <= MAX_URL && /^https:\/\/[^/?#\s]+/.test(url)) return url;
++  }
++  return null;
++}
++
++/** The embed Discord draws, in the shape of the API's embed object. */
++export function embedFor(url: string, d: LinkPreviewData): any {
++  const e: any = { type: "link", url };
++  if (d.title) e.title = d.title;
++  if (d.description) e.description = d.description;
++  if (d.site) e.provider = { name: d.site };
++  if (d.image) {
++    const w = Number(d.w) > 0 && Number(d.h) > 0 ? Number(d.w) : 1200; // no size in the page: a typical card
++    const h = Number(d.w) > 0 && Number(d.h) > 0 ? Number(d.h) : 630;
++    e.thumbnail = { url: d.image, proxy_url: d.image, width: w, height: h };
++  }
++  return e;
++}
++
++function dispatch(e: any): void {
++  try {
++    const d = unscoped().discord.common.flux.Dispatcher;
++    if (typeof d?.dispatch === "function") void Promise.resolve(d.dispatch(e)).catch(() => {});
++  } catch {
++    // Discord's dispatcher is not reachable: the embed simply appears the next time the message is processed.
++  }
++}
++
++function pump(): void {
++  while (running < MAX_PARALLEL && queue.length) {
++    const url = queue.pop()!; // newest first
++    const run = generation;
++    running++;
++    inFlight.add(url);
++    nativeLinkPreview(url)
++      .then((d) => {
++        if (run !== generation) return;
++        cache.set(url, d);
++        if (d) stats.fetched++;
++        else stats.empty++;
++        const list = waiting.get(url) ?? [];
++        waiting.delete(url);
++        if (d) for (const w of list) {
++          stats.shown++;
++          dispatch({ type: "MESSAGE_UPDATE", message: { id: w.id, channel_id: w.channel, embeds: [embedFor(url, d)] } });
++        }
++      })
++      .catch((e) => {
++        if (run !== generation) return;
++        cache.set(url, null);
++        waiting.delete(url);
++        stats.failed++;
++        stats.lastError = String((e as any)?.message ?? e).split("\n")[0].slice(0, 50);
++      })
++      .finally(() => {
++        inFlight.delete(url);
++        if (run === generation) running--;
++        note();
++        pump();
++      });
++  }
++}
++
++/**
++ * Called for every decrypted message with its text. Attaches a cached preview at once, or queues
++ * the lookup and updates the message when it arrives. Does nothing unless link previews are on.
++ */
++export function handleLinkPreviews(m: any, text: string, channelId: string | undefined): void {
++  if (!storage.linkPreviews || !nativeReady()) return;
++  if (Array.isArray(m.embeds) && m.embeds.length) return; // a real embed is already there
++  const url = firstLinkUrl(text);
++  if (!url) return;
++  if (cache.has(url)) {
++    const d = cache.get(url);
++    if (d) { m.embeds = [embedFor(url, d)]; stats.shown++; }
++    return;
++  }
++  const id = m.id != null ? String(m.id) : "";
++  const channel = String(m.channel_id ?? channelId ?? "");
++  if (id && channel) {
++    const list = waiting.get(url) ?? [];
++    if (!list.some((w) => w.id === id)) list.push({ id, channel });
++    waiting.set(url, list);
++  }
++  if (inFlight.has(url) || queue.includes(url)) return;
++  if (queue.length >= MAX_QUEUE) queue.shift();
++  queue.push(url);
++  pump();
++}
++
++/** Forgets everything (plugin start and stop, or when the setting is turned off). */
++export function clearLinkPreviews(): void {
++  generation++;
++  queue.length = 0;
++  inFlight.clear();
++  waiting.clear();
++  cache.clear();
++  running = 0;
++  stats.fetched = stats.empty = stats.failed = stats.shown = 0;
++  stats.lastError = "";
++  note();
++}
+diff --git a/plugins/aegires-e2ee/js/patches/media.ts b/plugins/aegires-e2ee/js/patches/media.ts
+index 629d290..ea6bbbc 100644
+--- a/plugins/aegires-e2ee/js/patches/media.ts
++++ b/plugins/aegires-e2ee/js/patches/media.ts
+@@ -8,39 +8,61 @@
+ //      decrypts it straight into the cache dir, so the bytes never cross the JS bridge. Android
+ //      then reports the pixel size.
+ //   3. A partial MESSAGE_UPDATE is dispatched so the message store picks up the rewritten attachment.
+-// Images, GIFs and videos. Decrypted files are deleted when the plugin starts and when it stops.
++// Images, GIFs, videos and audio. Decrypted files are deleted when the plugin starts and when it stops.
++//
++// Videos and audio cannot be played by Discord from a file:// path, so the chat shows a picture
++// made by the native half (a video's first frame with a play button and its length; for audio a
++// small card with title and length). Tapping that picture opens the native player (player.ts).
+ import { storage } from "../storage.ts";
+ import { unscoped } from "../host.ts";
+ import { base64Encode } from "../crypto/base64.ts";
+ import { MAX_FILE_BYTES, extOf, imageMimeFor, isEncryptedFileName, mimeFor, originalFileName, rawCdnUrl } from "../crypto/files.ts";
+ import { getReceiveKeysV2 } from "../state.ts";
+ import { attachmentsEnabled } from "../features.ts";
+-import { cacheDir, nativeMediaInfo, nativeOpenFile, nativeReady, removePath } from "../engine/engine.ts";
++import { cacheDir, nativeMediaInfo, nativeMediaThumb, nativeOpenFile, nativeReady, removePath } from "../engine/engine.ts";
+ import { diag } from "../diag.ts";
+ 
+ const log = (...a: any[]) => { if (storage.debug) console.log("[aegires-e2ee:media]", ...a); };
+ 
+-interface Decrypted { uri: string; name: string; mime: string; size: number; w: number; h: number }
++type Kind = "image" | "video" | "audio";
++/** Something the native player can play: the absolute path of the decrypted file and a title for audio. */
++export interface PlayableMedia { path: string; title: string }
++interface Decrypted { uri: string; name: string; mime: string; size: number; w: number; h: number; kind: Kind; thumb?: string; title: string }
+ 
+ const done = new Map<string, Decrypted>(); // attachment id -> decrypted file
+ const failed = new Set<string>(); // ids that did not decrypt (no retry until the plugin restarts)
+ const queued = new Set<string>();
+ const msgAtts = new Map<string, string[]>(); // message id -> its attachment ids (for tap events)
++const thumbs = new Map<string, PlayableMedia>(); // absolute path of a chat picture -> the media it stands for
++
++const MEDIA_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp|mp3|m4a|aac|ogg|oga|opus|wav|flac|amr|mka)$/i;
+ 
+-/** Absolute path of the decrypted video a tap refers to: by attachment ids, or message id + index. */
+-export function decryptedVideoPath(ids: string[], messageId?: string, index?: number): string | null {
+-  const vid = (d?: Decrypted) => (d && d.mime.startsWith("video/") ? d.uri.replace(/^file:\/\//, "") : null);
++const playable = (d?: Decrypted): PlayableMedia | null =>
++  d && d.kind !== "image" ? { path: d.uri.replace(/^file:\/\//, ""), title: d.title } : null;
++
++/** The decrypted video or audio a tap refers to: by attachment ids, or message id + index. */
++export function decryptedMedia(ids: string[], messageId?: string, index?: number): PlayableMedia | null {
+   for (const id of ids) {
+-    const p = vid(done.get(id));
++    const p = playable(done.get(id));
+     if (p) return p;
+   }
+   const list = messageId ? msgAtts.get(messageId) : undefined;
+   if (!list) return null;
+-  if (index != null) return vid(done.get(list[index] ?? ""));
+-  const all = list.map((id) => vid(done.get(id))).filter((p): p is string => !!p);
++  if (index != null) return playable(done.get(list[index] ?? ""));
++  const all = list.map((id) => playable(done.get(id))).filter((p): p is PlayableMedia => !!p);
+   return all.length === 1 ? all[0] : null;
+ }
+ 
++/** The media behind a file:// uri Discord reports: one of our chat pictures, or a decrypted media file itself. */
++export function mediaForUri(uri: unknown): PlayableMedia | null {
++  if (typeof uri !== "string" || !uri.startsWith("file://") || !uri.includes("/aegires/")) return null;
++  let path = uri.split("?")[0].replace(/^file:\/\//, "");
++  try { path = decodeURIComponent(path); } catch {}
++  const hit = thumbs.get(path);
++  if (hit) return hit;
++  return MEDIA_EXT.test(path) ? { path, title: "" } : null;
++}
++
+ /** Settles when the folder of decrypted files left by an earlier session has been emptied. */
+ let purged: Promise<void> = Promise.resolve();
+ 
+@@ -93,15 +115,26 @@ function apply(a: any, d: Decrypted): void {
+   // Discord only draws images inline when it knows their size.
+   a.width = d.w;
+   a.height = d.h;
+-  if (d.mime.startsWith("video/")) {
++  if (d.kind !== "image") {
+     // Discord's inline player streams only over http(s) and fails on file://. Declared as an
+-    // image, the chat draws the video's first frame instead (its image loader reads local
+-    // videos). Playing it on tap is a separate step.
++    // image, the chat draws our picture instead: the native half's thumbnail (play button on a
++    // video's first frame, or an audio card). If no thumbnail could be made, a video file is shown
++    // as is (Discord's image loader reads its first frame). Playing it on tap is player.ts.
++    if (d.thumb) {
++      a.url = "file://" + d.thumb;
++      a.proxy_url = a.url;
++    }
+     a.content_type = "image/jpeg";
+     a.filename = d.name + ".jpg";
+   }
+ }
+ 
++/** What the audio card and the player call a file: its name without the extension, unless that is just random hex. */
++function titleFor(name: string, kind: Kind): string {
++  const stem = name.replace(/\.[^./]+$/, "");
++  return !stem || /^[0-9a-f]{16,}$/i.test(stem) ? (kind === "video" ? "Video" : "Audio") : stem;
++}
++
+ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: string, authorId: string): Promise<Decrypted> {
+   await purged;
+   const name = originalFileName(String(a.filename));
+@@ -121,9 +154,30 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
+   }
+   if (size < 0) throw last ?? new Error("wrong key or corrupted file");
+   const mime = mimeFor(name);
+-  const video = mime.startsWith("video/");
+-  const info = await nativeMediaInfo(out, video ? "video" : "image").catch(() => null);
+-  return { uri: "file://" + out, name, mime, size, w: info?.w ?? (Number(a.width) || (video ? 640 : 480)), h: info?.h ?? (Number(a.height) || (video ? 360 : 360)) };
++  const kind: Kind = mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "image";
++  const title = titleFor(name, kind);
++  let w = 0;
++  let h = 0;
++  let thumb: string | undefined;
++  if (kind !== "audio") {
++    const info = await nativeMediaInfo(out, kind).catch(() => null);
++    w = info?.w ?? (Number(a.width) || (kind === "video" ? 640 : 480));
++    h = info?.h ?? (Number(a.height) || 360);
++  }
++  if (kind !== "image") {
++    const thumbPath = `${await cacheDir()}/aegires/in/${id}.thumb.jpg`;
++    try {
++      const t = await nativeMediaThumb(kind, out, thumbPath, title);
++      thumb = thumbPath;
++      w = t.w;
++      h = t.h;
++      thumbs.set(thumbPath, { path: out, title });
++    } catch (e) {
++      if (kind === "audio") throw e; // an audio file has no picture of its own to fall back to
++      log("no thumbnail for the video", id, e);
++    }
++  }
++  return { uri: "file://" + out, name, mime, size, w, h, kind, thumb, title };
+ }
+ 
+ // ---------------------------------------------------------------- entry points
+@@ -135,7 +189,8 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
+   for (const a of m.attachments) {
+     if (!isEncAttachment(a)) continue;
+     const orig = originalFileName(String(a.filename));
+-    if (!imageMimeFor(orig) && !mimeFor(orig).startsWith("video/")) continue;
++    const mime = mimeFor(orig);
++    if (!imageMimeFor(orig) && !mime.startsWith("video/") && !mime.startsWith("audio/")) continue;
+     const id = idOf(a);
+     if (!id) continue;
+     const hit = done.get(id);
+@@ -185,6 +240,7 @@ export function clearMedia(): void {
+   failed.clear();
+   queued.clear();
+   msgAtts.clear();
++  thumbs.clear();
+   purged = (async () => {
+     try {
+       await removePath(`${await cacheDir()}/aegires/in`);
+diff --git a/plugins/aegires-e2ee/js/patches/player.ts b/plugins/aegires-e2ee/js/patches/player.ts
+index 3a9d1ee..9c5b952 100644
+--- a/plugins/aegires-e2ee/js/patches/player.ts
++++ b/plugins/aegires-e2ee/js/patches/player.ts
+@@ -1,59 +1,50 @@
+-// Tap on a decrypted video -> our native full-screen player (Kotlin VideoPlayer).
++// Tap on a decrypted video or audio file -> our native full-screen player (Kotlin VideoPlayer).
+ //
+-// The chat shows a decrypted video as a first-frame picture (see media.ts), so Discord would open
+-// its picture viewer on tap. Two hooks catch the tap before that:
+-//   1. the media viewer's openMediaModal(...) - looks for our video file in its arguments;
++// The chat shows a decrypted video or audio file as a picture made by the native half (see
++// media.ts), so Discord would open its picture viewer on tap. Two hooks catch the tap first:
++//   1. the media viewer's openMediaModal(...) - looks for our picture / media file in its arguments;
+ //   2. the native chat list's onTap* props (set where its element is created) - looks for the
+-//      video by attachment id / message id.
+-// If neither recognises a video, the original handler runs unchanged.
++//      media by attachment id / message id.
++// If neither recognises one of our files, the original handler runs unchanged.
+ import { instead, whenFns } from "../patch.ts";
+ import { reactModule } from "../host.ts";
+-import { decryptedVideoPath } from "./media.ts";
+-import { nativePlayVideo, nativeReady } from "../engine/engine.ts";
++import { decryptedMedia, mediaForUri, type PlayableMedia } from "./media.ts";
++import { nativePlayMedia, nativeReady } from "../engine/engine.ts";
+ import { diag } from "../diag.ts";
+ 
+ 
+-const VIDEO = /\.(mp4|m4v|mov|webm|mkv|3gp)$/i;
+ const note = (msg: string) => { diag.installed["video player"] = msg; };
+ 
+-const isOurVideo = (s: unknown): s is string =>
+-  typeof s === "string" && s.startsWith("file://") && s.includes("/aegires/") && VIDEO.test(s.split("?")[0]);
+-
+-const toPath = (u: string) => {
+-  const raw = u.split("?")[0].replace(/^file:\/\//, "");
+-  try { return decodeURIComponent(raw); } catch { return raw; }
+-};
+-
+-/** Our video file uris anywhere in v (bounded walk), in order. */
+-function videosIn(v: any, out: string[] = [], depth = 0, seen = new Set<any>()): string[] {
+-  if (isOurVideo(v)) {
+-    const p = toPath(v);
+-    if (!out.includes(p)) out.push(p);
++/** Our playable media (picture or media file uris) anywhere in v (bounded walk), in order. */
++function mediaIn(v: any, out: PlayableMedia[] = [], depth = 0, seen = new Set<any>()): PlayableMedia[] {
++  if (typeof v === "string") {
++    const m = mediaForUri(v);
++    if (m && !out.some((x) => x.path === m.path)) out.push(m);
+     return out;
+   }
+   if (!v || typeof v !== "object" || depth > 5 || seen.has(v)) return out;
+   seen.add(v);
+   const vals = Array.isArray(v) ? v.slice(0, 100) : Object.values(v).slice(0, 60);
+-  for (const x of vals) videosIn(x, out, depth + 1, seen);
++  for (const x of vals) mediaIn(x, out, depth + 1, seen);
+   return out;
+ }
+ 
+-/** The video the viewer opens on: the item at the start index if the args name one, else the only video. */
+-function pickVideo(args: any[]): string | null {
+-  const all = videosIn(args);
++/** The media the viewer opens on: the item at the start index if the args name one, else the only one. */
++function pickMedia(args: any[]): PlayableMedia | null {
++  const all = mediaIn(args);
+   if (!all.length) return null;
+   for (const a of args) {
+     if (!a || typeof a !== "object") continue;
+     const idxKey = Object.keys(a).find((k) => /index/i.test(k) && typeof a[k] === "number");
+     const list = Object.values(a).find((x) => Array.isArray(x) && x.length > 1) as any[] | undefined;
+-    if (idxKey && list) return videosIn(list[a[idxKey]])[0] ?? null;
++    if (idxKey && list) return mediaIn(list[a[idxKey]])[0] ?? null;
+   }
+   return all.length === 1 ? all[0] : null;
+ }
+ 
+-/** The video for a chat-list tap event: our file uri in it, else attachment ids / message id + index. */
+-function videoForTap(ne: any): string | null {
+-  const direct = videosIn(ne)[0];
++/** The media for a chat-list tap event: our picture / file uri in it, else attachment ids / message id + index. */
++function mediaForTap(ne: any): PlayableMedia | null {
++  const direct = mediaIn(ne)[0];
+   if (direct) return direct;
+   const ids: string[] = [];
+   const walk = (v: any, d: number) => {
+@@ -64,13 +55,13 @@ function videoForTap(ne: any): string | null {
+   walk(ne, 0);
+   const idx = Object.keys(ne ?? {}).find((k) => /index/i.test(k) && typeof ne[k] === "number");
+   const msg = ne?.messageId ?? ne?.message_id;
+-  return decryptedVideoPath(ids, msg != null ? String(msg) : undefined, idx ? ne[idx] : undefined);
++  return decryptedMedia(ids, msg != null ? String(msg) : undefined, idx ? ne[idx] : undefined);
+ }
+ 
+-function play(path: string): boolean {
++function play(m: PlayableMedia): boolean {
+   if (!nativeReady()) { note("native module not ready - Discord's viewer used"); return false; }
+-  nativePlayVideo(path).then(
+-    () => note("opened " + path.slice(path.lastIndexOf("/") + 1)),
++  nativePlayMedia(m.path, m.title).then(
++    () => note("opened " + m.path.slice(m.path.lastIndexOf("/") + 1)),
+     (e) => note("player failed: " + String((e as any)?.message ?? e).slice(0, 80)),
+   );
+   return true;
+@@ -92,7 +83,7 @@ function wrapTaps(props: any): any {
+       }
+       if (/Image|Media|Attachment|Video/i.test(k)) {
+         try {
+-          const p = videoForTap(ne);
++          const p = mediaForTap(ne);
+           if (p && play(p)) return undefined;
+         } catch (err) {
+           note("tap failed: " + String((err as any)?.message ?? err).slice(0, 80));
+@@ -115,7 +106,7 @@ export function installVideoPlayer(): () => void {
+   undo.push(whenFns(["openMediaModal"], (mod) => {
+     undo.push(instead("openMediaModal", mod, (args, orig) => {
+       try {
+-        const p = pickVideo(args);
++        const p = pickMedia(args);
+         if (p && play(p)) return undefined;
+       } catch (e) {
+         note("viewer hook failed: " + String((e as any)?.message ?? e).slice(0, 80));
+diff --git a/plugins/aegires-e2ee/js/patches/receive.ts b/plugins/aegires-e2ee/js/patches/receive.ts
+index ac4ce3d..110416e 100644
+--- a/plugins/aegires-e2ee/js/patches/receive.ts
++++ b/plugins/aegires-e2ee/js/patches/receive.ts
+@@ -21,6 +21,7 @@ import { notify } from "../notify.ts";
+ import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
+ import { encryptAttachments } from "../outgoing.ts";
+ import { clearMedia, handleAttachments } from "./media.ts";
++import { clearLinkPreviews, handleLinkPreviews } from "./embeds.ts";
+ import { diag } from "../diag.ts";
+ 
+ /** Ids of messages we decrypted, so edits of them stay encrypted (see send.ts). */
+@@ -91,6 +92,7 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
+       const sp = splitSizeTag(plain);
+       if (sp.width !== null && sp.width > 0 && sp.height > 0) tag = { w: sp.width, h: sp.height };
+       m.content = sp.text || sp.width === null ? (storage.showLock && lockMode.front ? LOCK : "") + sp.text : "";
++      handleLinkPreviews(m, sp.text, channelId);
+     } else if (r === "nokey") {
+       diag.noKey++;
+     } else if (r === "noauthor") {
+@@ -193,6 +195,7 @@ export function installReceivePatch(): () => void {
+   if (typeof hook !== "function") throw new Error("Valenced onAnyFluxEventDispatched not found");
+ 
+   clearMedia(); // decrypted files left by an earlier session
++  clearLinkPreviews();
+   const unpatch = hook((event: any) => {
+     try {
+       if (handleEvent(event)) return undefined; // drop this event
+@@ -205,6 +208,7 @@ export function installReceivePatch(): () => void {
+   return () => {
+     unpatch();
+     clearMedia();
++    clearLinkPreviews();
+     encryptedIds.clear();
+     authorById.clear();
+   };
+diff --git a/plugins/aegires-e2ee/js/state.ts b/plugins/aegires-e2ee/js/state.ts
+index eef4c01..eee400b 100644
+--- a/plugins/aegires-e2ee/js/state.ts
++++ b/plugins/aegires-e2ee/js/state.ts
+@@ -40,6 +40,7 @@ export function initStorage(): void {
+   storage.encryptByDefault ??= false;
+   storage.showLock ??= true;
+   storage.attachmentsExp ??= false; // experimental encrypted attachments, opt-in
++  storage.linkPreviews ??= false; // link previews for decrypted messages: this phone contacts the linked site, so opt-in
+   storage.debug ??= false;
+   applyDevKdf();
+ }
+diff --git a/plugins/aegires-e2ee/js/ui/Settings.tsx b/plugins/aegires-e2ee/js/ui/Settings.tsx
+index e15393c..48f5228 100644
+--- a/plugins/aegires-e2ee/js/ui/Settings.tsx
++++ b/plugins/aegires-e2ee/js/ui/Settings.tsx
+@@ -29,6 +29,7 @@ import { benchArgon2, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
+ import { getKdfOverride } from "../crypto/kdf2.ts";
+ import { diag, diagLines } from "../diag.ts";
+ import { EngineHost } from "../engine/engine.ts";
++import { clearLinkPreviews } from "../patches/embeds.ts";
+ import { BUILD_NUMBER, DEVELOPER, PLUGIN_VERSION } from "../about.ts";
+ 
+ // React Native binds after this script is evaluated, so each primitive is resolved at render time.
+@@ -220,6 +221,7 @@ function SettingsInner() {
+       <Card title="Behaviour">
+         <ToggleRow label="Encrypt outgoing messages by default (in chats without their own on/off setting)" value={!!storage.encryptByDefault} onChange={(v) => { storage.encryptByDefault = v; refresh(); }} />
+         <ToggleRow label="Attachments (EXPERIMENTAL): encrypt files you send in encrypted chats, under random names. Received encrypted images are shown decrypted (other file types are not built yet). When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
++        <ToggleRow label="Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default" value={!!storage.linkPreviews} onChange={(v) => { storage.linkPreviews = v; if (!v) clearLinkPreviews(); refresh(); }} />
+         <ToggleRow label="Show a lock icon next to the time of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
+         <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} />
+       </Card>
+diff --git a/plugins/aegires-e2ee/manifest.json b/plugins/aegires-e2ee/manifest.json
+index 0367073..b7896f7 100644
+--- a/plugins/aegires-e2ee/manifest.json
++++ b/plugins/aegires-e2ee/manifest.json
+@@ -4,7 +4,7 @@
+ 	"name": "Aegires E2EE",
+ 	"description": "Encrypt and decrypt Discord messages with a shared passphrase. Compatible with the Aegires Android client. Text messages only for now: attachments are blocked in encrypted chats. Includes a native module that speeds up key derivation.",
+ 	"author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
+-	"version": "0.1.25",
++	"version": "0.1.26",
+ 	"dependencies": {
+ 		"valenced.api": {
+ 			"version": ">=1 <2"
+diff --git a/plugins/aegires-e2ee/src/main/java/aegires/e2ee/FileNames.java b/plugins/aegires-e2ee/src/main/java/aegires/e2ee/FileNames.java
+index 9ee6820..30e41c1 100644
+--- a/plugins/aegires-e2ee/src/main/java/aegires/e2ee/FileNames.java
++++ b/plugins/aegires-e2ee/src/main/java/aegires/e2ee/FileNames.java
+@@ -34,6 +34,9 @@ public final class FileNames {
+             case "audio/ogg": return "ogg";
+             case "audio/mp4": return "m4a";
+             case "audio/wav": return "wav";
++            case "audio/aac": return "aac";
++            case "audio/flac": return "flac";
++            case "audio/opus": return "opus";
+             case "application/pdf": return "pdf";
+             case "text/plain": return "txt";
+             case "application/zip": return "zip";
+diff --git a/plugins/aegires-e2ee/src/main/java/aegires/e2ee/LinkPreview.java b/plugins/aegires-e2ee/src/main/java/aegires/e2ee/LinkPreview.java
+new file mode 100644
+index 0000000..a4289f2
+--- /dev/null
++++ b/plugins/aegires-e2ee/src/main/java/aegires/e2ee/LinkPreview.java
+@@ -0,0 +1,295 @@
++package aegires.e2ee;
++
++import java.io.ByteArrayOutputStream;
++import java.io.IOException;
++import java.io.InputStream;
++import java.net.HttpURLConnection;
++import java.net.InetAddress;
++import java.net.URI;
++import java.net.URL;
++import java.nio.charset.Charset;
++import java.nio.charset.StandardCharsets;
++import java.util.HashMap;
++import java.util.Locale;
++import java.util.Map;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++/**
++ * Link preview data (title, description, picture) for ONE https page, read from its Open Graph /
++ * Twitter-card tags. Plain Java with no Android imports, so the parsing is unit-tested on a JVM.
++ *
++ * Why this exists: an encrypted message is "§..." to Discord's servers, so Discord never builds an
++ * embed for the link inside it. The plugin builds one on this device instead. That means THIS
++ * PHONE contacts the linked site (which then sees its IP address), so the JS side only calls this
++ * when the user switched link previews on.
++ *
++ * Limits: https only, port 443, no user info, public addresses only (loopback / private / link-local
++ * addresses are refused, also after every redirect), at most 3 redirects, 8 s timeouts, 256 KiB of
++ * HTML read, no cookies. Known gap: the address is checked right before connecting, so a DNS
++ * answer that changes in between is not caught.
++ */
++public final class LinkPreview {
++    private LinkPreview() {}
++
++    static final int MAX_BYTES = 256 * 1024;
++    static final int MAX_REDIRECTS = 3;
++    static final int TIMEOUT_MS = 8000;
++    private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AegiresLinkPreview/1";
++
++    /** JSON {"title","description","image","w","h","site"} or "" when the page has nothing to show. */
++    public static String fetch(String url) throws IOException {
++        URL u = checkedUrl(url);
++        for (int hop = 0; ; hop++) {
++            HttpURLConnection c = (HttpURLConnection) u.openConnection();
++            try {
++                c.setInstanceFollowRedirects(false);
++                c.setConnectTimeout(TIMEOUT_MS);
++                c.setReadTimeout(TIMEOUT_MS);
++                c.setRequestProperty("User-Agent", USER_AGENT);
++                c.setRequestProperty("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1");
++                c.setRequestProperty("Accept-Language", "en");
++                int code = c.getResponseCode();
++                if (code >= 300 && code < 400) {
++                    String loc = c.getHeaderField("Location");
++                    if (loc == null || hop >= MAX_REDIRECTS) return "";
++                    u = checkedUrl(new URL(u, loc).toString());
++                    continue;
++                }
++                if (code != 200) return "";
++                String type = c.getContentType();
++                if (type == null || !type.toLowerCase(Locale.ROOT).contains("html")) return "";
++                byte[] body = readLimited(c.getInputStream(), MAX_BYTES);
++                return toJson(parse(decode(body, type), u.toString()));
++            } finally {
++                c.disconnect();
++            }
++        }
++    }
++
++    // ------------------------------------------------------------------ address rules
++
++    /** Throws unless the url is a plain https url to a public address. */
++    static URL checkedUrl(String url) throws IOException {
++        URL u = new URL(url);
++        if (!"https".equalsIgnoreCase(u.getProtocol())) throw new IOException("https only");
++        if (u.getUserInfo() != null) throw new IOException("user info not allowed");
++        if (u.getPort() != -1 && u.getPort() != 443) throw new IOException("port not allowed");
++        String host = u.getHost();
++        if (host == null || host.isEmpty()) throw new IOException("no host");
++        for (InetAddress a : InetAddress.getAllByName(host)) {
++            if (!isPublic(a)) throw new IOException("address not public");
++        }
++        return u;
++    }
++
++    static boolean isPublic(InetAddress a) {
++        if (a.isAnyLocalAddress() || a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress() || a.isMulticastAddress()) return false;
++        byte[] b = a.getAddress();
++        if (b.length == 4) {
++            int b0 = b[0] & 0xff;
++            int b1 = b[1] & 0xff;
++            if (b0 == 0) return false; // "this network"
++            if (b0 == 100 && b1 >= 64 && b1 <= 127) return false; // carrier-grade NAT
++            if (b0 == 192 && b1 == 0 && (b[2] & 0xff) == 0) return false; // 192.0.0.0/24
++            if (b0 >= 240) return false; // reserved / broadcast
++        } else if (b.length == 16) {
++            if ((b[0] & 0xfe) == 0xfc) return false; // unique local fc00::/7
++        }
++        return true;
++    }
++
++    // ------------------------------------------------------------------ reading
++
++    private static byte[] readLimited(InputStream in, int max) throws IOException {
++        try (InputStream s = in) {
++            ByteArrayOutputStream out = new ByteArrayOutputStream();
++            byte[] buf = new byte[8192];
++            int n;
++            while (out.size() < max && (n = s.read(buf, 0, Math.min(buf.length, max - out.size()))) > 0) out.write(buf, 0, n);
++            return out.toByteArray();
++        }
++    }
++
++    private static final Pattern CHARSET = Pattern.compile("charset\\s*=\\s*[\"']?([A-Za-z0-9_\\-]+)", Pattern.CASE_INSENSITIVE);
++
++    static String decode(byte[] body, String contentType) {
++        Charset cs = StandardCharsets.UTF_8;
++        String name = null;
++        Matcher m = contentType == null ? null : CHARSET.matcher(contentType);
++        if (m != null && m.find()) name = m.group(1);
++        if (name == null) {
++            // <meta charset=...> is in the first bytes; read them as Latin-1 to find it.
++            Matcher mm = CHARSET.matcher(new String(body, 0, Math.min(body.length, 2048), StandardCharsets.ISO_8859_1));
++            if (mm.find()) name = mm.group(1);
++        }
++        if (name != null) {
++            try {
++                cs = Charset.forName(name);
++            } catch (Exception ignored) {
++                // unknown charset: keep UTF-8
++            }
++        }
++        return new String(body, cs);
++    }
++
++    // ------------------------------------------------------------------ parsing
++
++    private static final Pattern META = Pattern.compile("<meta\\s[^>]*>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
++    private static final Pattern ATTR = Pattern.compile("([A-Za-z_:][-A-Za-z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'>]+))", Pattern.DOTALL);
++    private static final Pattern TITLE = Pattern.compile("<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
++    private static final Pattern ENTITY = Pattern.compile("&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|amp|lt|gt|quot|apos|nbsp);");
++
++    /** Preview fields from HTML. Keys: title, description, image, w, h, site (missing ones are absent). */
++    static Map<String, String> parse(String html, String pageUrl) {
++        int head = html.toLowerCase(Locale.ROOT).indexOf("</head>");
++        String scan = head > 0 ? html.substring(0, head) : html;
++        Map<String, String> meta = new HashMap<>();
++        Matcher m = META.matcher(scan);
++        while (m.find()) {
++            Map<String, String> attrs = new HashMap<>();
++            Matcher a = ATTR.matcher(m.group());
++            while (a.find()) {
++                String v = a.group(2) != null ? a.group(2) : a.group(3) != null ? a.group(3) : a.group(4);
++                attrs.put(a.group(1).toLowerCase(Locale.ROOT), v);
++            }
++            String key = attrs.containsKey("property") ? attrs.get("property") : attrs.get("name");
++            String val = attrs.get("content");
++            if (key == null || val == null) continue;
++            key = key.toLowerCase(Locale.ROOT);
++            if (!meta.containsKey(key)) meta.put(key, val); // first one wins
++        }
++        Map<String, String> out = new HashMap<>();
++        String title = first(meta, "og:title", "twitter:title");
++        if (title == null) {
++            Matcher t = TITLE.matcher(scan);
++            if (t.find()) title = t.group(1);
++        }
++        title = clean(title, 256);
++        String desc = clean(first(meta, "og:description", "twitter:description", "description"), 300);
++        String site = clean(first(meta, "og:site_name"), 100);
++        if (site.isEmpty()) {
++            try {
++                site = new URI(pageUrl).getHost();
++            } catch (Exception ignored) {
++                site = "";
++            }
++            if (site == null) site = "";
++        }
++        String image = absoluteHttps(pageUrl, first(meta, "og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src"));
++        if (!title.isEmpty()) out.put("title", title);
++        if (!desc.isEmpty()) out.put("description", desc);
++        if (!site.isEmpty()) out.put("site", site);
++        if (image != null) {
++            out.put("image", image);
++            int w = toInt(first(meta, "og:image:width"));
++            int h = toInt(first(meta, "og:image:height"));
++            if (w > 0 && h > 0) {
++                out.put("w", String.valueOf(w));
++                out.put("h", String.valueOf(h));
++            }
++        }
++        return out;
++    }
++
++    private static String first(Map<String, String> meta, String... keys) {
++        for (String k : keys) {
++            String v = meta.get(k);
++            if (v != null && !v.trim().isEmpty()) return v;
++        }
++        return null;
++    }
++
++    private static int toInt(String s) {
++        try {
++            int n = Integer.parseInt(s == null ? "" : s.trim());
++            return n > 0 && n <= 20000 ? n : 0;
++        } catch (NumberFormatException e) {
++            return 0;
++        }
++    }
++
++    private static String absoluteHttps(String base, String ref) {
++        if (ref == null || ref.trim().isEmpty()) return null;
++        try {
++            String abs = new URL(new URL(base), unescape(ref.trim())).toString();
++            return abs.startsWith("https://") && abs.length() <= 2000 ? abs : null;
++        } catch (Exception e) {
++            return null;
++        }
++    }
++
++    /** Decodes entities, collapses whitespace, drops control characters and cuts to [max] chars. */
++    static String clean(String s, int max) {
++        if (s == null) return "";
++        s = unescape(s).replaceAll("[\\p{Cntrl}\\s]+", " ").trim();
++        return s.length() > max ? s.substring(0, max - 1).trim() + "\u2026" : s;
++    }
++
++    static String unescape(String s) {
++        Matcher m = ENTITY.matcher(s);
++        StringBuffer sb = new StringBuffer();
++        while (m.find()) {
++            String e = m.group(1);
++            String r;
++            switch (e) {
++                case "amp": r = "&"; break;
++                case "lt": r = "<"; break;
++                case "gt": r = ">"; break;
++                case "quot": r = "\""; break;
++                case "apos": r = "'"; break;
++                case "nbsp": r = " "; break;
++                default:
++                    try {
++                        int cp = e.charAt(1) == 'x' ? Integer.parseInt(e.substring(2), 16) : Integer.parseInt(e.substring(1));
++                        r = Character.isValidCodePoint(cp) && cp > 0 ? new String(Character.toChars(cp)) : "";
++                    } catch (NumberFormatException ex) {
++                        r = "";
++                    }
++            }
++            m.appendReplacement(sb, Matcher.quoteReplacement(r));
++        }
++        m.appendTail(sb);
++        return sb.toString();
++    }
++
++    // ------------------------------------------------------------------ output
++
++    /** Empty string when there is nothing worth an embed (no title and no description). */
++    static String toJson(Map<String, String> f) {
++        if (!f.containsKey("title") && !f.containsKey("description")) return "";
++        StringBuilder sb = new StringBuilder("{");
++        boolean firstField = true;
++        for (String k : new String[] {"title", "description", "image", "site"}) {
++            String v = f.get(k);
++            if (v == null) continue;
++            if (!firstField) sb.append(',');
++            firstField = false;
++            sb.append('"').append(k).append("\":\"").append(escape(v)).append('"');
++        }
++        for (String k : new String[] {"w", "h"}) {
++            String v = f.get(k);
++            if (v == null) continue;
++            sb.append(",\"").append(k).append("\":").append(v);
++        }
++        return sb.append('}').toString();
++    }
++
++    static String escape(String s) {
++        StringBuilder sb = new StringBuilder(s.length() + 8);
++        for (int i = 0; i < s.length(); i++) {
++            char c = s.charAt(i);
++            switch (c) {
++                case '"': sb.append("\\\""); break;
++                case '\\': sb.append("\\\\"); break;
++                case '\n': sb.append("\\n"); break;
++                case '\r': sb.append("\\r"); break;
++                case '\t': sb.append("\\t"); break;
++                default:
++                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
++                    else sb.append(c);
++            }
++        }
++        return sb.toString();
++    }
++}
+diff --git a/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/AegiresNative.kt b/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/AegiresNative.kt
+index f6223ea..304a88c 100644
+--- a/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/AegiresNative.kt
++++ b/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/AegiresNative.kt
+@@ -166,6 +166,34 @@ val aegiresNative = plugin {
+             MediaInfo.probe(appContext, path, kind)
+         }
+ 
++        // Picture for a decrypted video (first frame + play button + length) or audio file (a card),
++        // written as a JPEG under .../aegires/. Returns "W,H".
++        registerNativeAsyncMethod("aegires.mediathumb") { rawArgs ->
++            val args = rawArgs.asDelegate()
++            val kind: String by args.string()
++            val src: String by args.string()
++            val outPath: String by args.string()
++            val label: String by args.string()
++            MediaThumb.make(kind, src, outPath, label)
++        }
++
++        // Full-screen playback of a decrypted video or audio file, with a title for audio. Returns "ok".
++        registerNativeMethod("aegires.playmedia") { rawArgs ->
++            val args = rawArgs.asDelegate()
++            val path: String by args.string()
++            val title: String by args.string()
++            if (!VideoPlayer.allowed(path)) throw IllegalArgumentException("path not allowed")
++            withAppActivity { VideoPlayer.show(it, path, title) }
++            "ok"
++        }
++
++        // Link preview data (title, description, picture) for one https url, as JSON; "" if none.
++        registerNativeAsyncMethod("aegires.linkpreview") { rawArgs ->
++            val args = rawArgs.asDelegate()
++            val url: String by args.string()
++            LinkPreview.fetch(url)
++        }
++
+         // Full-screen playback of a decrypted video file (path under .../aegires/). Returns "ok".
+         registerNativeMethod("aegires.playvideo") { rawArgs ->
+             val args = rawArgs.asDelegate()
+diff --git a/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/MediaThumb.kt b/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/MediaThumb.kt
+new file mode 100644
+index 0000000..0b2ff7c
+--- /dev/null
++++ b/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/MediaThumb.kt
+@@ -0,0 +1,195 @@
++package aegires.e2ee
++
++import android.graphics.Bitmap
++import android.graphics.Canvas
++import android.graphics.Color
++import android.graphics.Paint
++import android.graphics.Path
++import android.graphics.RectF
++import android.graphics.Typeface
++import android.media.MediaMetadataRetriever
++import android.text.TextPaint
++import android.text.TextUtils
++import java.io.File
++import java.io.FileOutputStream
++import java.util.Locale
++
++/**
++ * Makes the picture Discord shows in the chat for a decrypted video or audio file.
++ *
++ * Discord draws the chat natively and cannot play file:// media, so a decrypted video is shown as a
++ * picture. To tell people it is a video, the first frame gets a play button and the length drawn
++ * on it. A decrypted audio file has no picture at all, so a small "audio card" is drawn instead
++ * (play button, title, length, size). Tapping either opens [VideoPlayer].
++ *
++ * Both files must live under an "aegires" cache folder (same rule as [VideoPlayer]).
++ */
++internal object MediaThumb {
++    private const val MAX_SIDE = 1280
++    private const val CARD_W = 720
++    private const val CARD_H = 216
++
++    /** Writes a JPEG to [out] and returns its size as "W,H". Throws if it cannot be made. */
++    fun make(kind: String, src: String, out: String, label: String): String {
++        if (!VideoPlayer.allowed(src) || !VideoPlayer.allowed(out)) throw IllegalArgumentException("path not allowed")
++        val bmp = if (kind == "audio") audioCard(src, label) else videoFrame(src)
++        try {
++            File(out).parentFile?.mkdirs()
++            FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }
++            return "${bmp.width},${bmp.height}"
++        } finally {
++            bmp.recycle()
++        }
++    }
++
++    // ------------------------------------------------------------------ video
++
++    private fun videoFrame(path: String): Bitmap {
++        val r = MediaMetadataRetriever()
++        try {
++            r.setDataSource(path)
++            val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
++            // A frame a moment in avoids the black first frame many videos start with.
++            val atUs = if (durMs > 3000) 1_000_000L else 0L
++            val raw = r.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
++                ?: r.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
++                ?: throw IllegalStateException("no video frame")
++            var frame = raw
++            val big = maxOf(raw.width, raw.height)
++            if (big > MAX_SIDE) {
++                val s = MAX_SIDE.toFloat() / big
++                frame = Bitmap.createScaledBitmap(raw, maxOf(1, (raw.width * s).toInt()), maxOf(1, (raw.height * s).toInt()), true)
++                if (frame !== raw) raw.recycle()
++            }
++            // Frames from the retriever can be immutable: draw on a copy.
++            val bmp = frame.copy(Bitmap.Config.ARGB_8888, true) ?: throw IllegalStateException("cannot copy frame")
++            if (bmp !== frame) frame.recycle()
++            drawPlayBadge(Canvas(bmp), bmp.width.toFloat(), bmp.height.toFloat())
++            if (durMs > 0) drawLength(Canvas(bmp), bmp.width.toFloat(), bmp.height.toFloat(), formatLength(durMs))
++            return bmp
++        } finally {
++            try {
++                r.release()
++            } catch (_: Exception) {
++            }
++        }
++    }
++
++    /** A round dark button with a white triangle, in the middle. */
++    private fun drawPlayBadge(c: Canvas, w: Float, h: Float) {
++        val radius = (minOf(w, h) * 0.12f).coerceIn(30f, 110f)
++        val cx = w / 2f
++        val cy = h / 2f
++        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xB3000000.toInt() }
++        c.drawCircle(cx, cy, radius, fill)
++        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
++            color = 0xE6FFFFFF.toInt()
++            style = Paint.Style.STROKE
++            strokeWidth = radius * 0.07f
++        }
++        c.drawCircle(cx, cy, radius, ring)
++        drawTriangle(c, cx + radius * 0.07f, cy, radius * 0.5f, Color.WHITE)
++    }
++
++    private fun drawTriangle(c: Canvas, cx: Float, cy: Float, size: Float, argb: Int) {
++        val p = Path().apply {
++            moveTo(cx - size * 0.45f, cy - size * 0.62f)
++            lineTo(cx - size * 0.45f, cy + size * 0.62f)
++            lineTo(cx + size * 0.62f, cy)
++            close()
++        }
++        c.drawPath(p, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = argb })
++    }
++
++    /** "0:12" in a dark pill, bottom left. */
++    private fun drawLength(c: Canvas, w: Float, h: Float, text: String) {
++        val size = (minOf(w, h) * 0.045f).coerceIn(18f, 44f)
++        val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
++            color = Color.WHITE
++            textSize = size
++            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
++        }
++        val pad = size * 0.5f
++        val tw = tp.measureText(text)
++        val left = size * 0.7f
++        val bottom = h - size * 0.7f
++        val rect = RectF(left, bottom - size - pad, left + tw + pad * 2, bottom)
++        c.drawRoundRect(rect, size * 0.5f, size * 0.5f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xB3000000.toInt() })
++        c.drawText(text, rect.left + pad, rect.bottom - pad * 0.5f - tp.descent(), tp)
++    }
++
++    // ------------------------------------------------------------------ audio
++
++    private fun audioCard(path: String, label: String): Bitmap {
++        var title = label
++        var artist = ""
++        var durMs = 0L
++        val r = MediaMetadataRetriever()
++        try {
++            r.setDataSource(path)
++            durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
++            val t = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
++            if (!t.isNullOrBlank()) title = t
++            artist = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
++        } catch (_: Exception) {
++            // Unknown length / tags: the card still draws, with what we have.
++        } finally {
++            try {
++                r.release()
++            } catch (_: Exception) {
++            }
++        }
++        if (title.isBlank()) title = "Audio"
++
++        val bmp = Bitmap.createBitmap(CARD_W, CARD_H, Bitmap.Config.ARGB_8888)
++        val c = Canvas(bmp)
++        c.drawColor(0xFF1E1F22.toInt())
++
++        // Round play button on the left.
++        val cx = 108f
++        val cy = CARD_H / 2f
++        c.drawCircle(cx, cy, 62f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF5865F2.toInt() })
++        drawTriangle(c, cx + 4f, cy, 30f, Color.WHITE)
++
++        val left = 200f
++        val maxText = CARD_W - left - 28f
++        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
++            color = Color.WHITE
++            textSize = 36f
++            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
++        }
++        val subPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
++            color = 0xFFB5BAC1.toInt()
++            textSize = 27f
++        }
++        val tShown = TextUtils.ellipsize(title, titlePaint, maxText, TextUtils.TruncateAt.END).toString()
++        c.drawText(tShown, left, cy - 16f, titlePaint)
++
++        val parts = ArrayList<String>()
++        if (artist.isNotBlank()) parts.add(artist)
++        parts.add(if (durMs > 0) "Audio · ${formatLength(durMs)}" else "Audio")
++        val bytes = File(path).length()
++        if (bytes > 0) parts.add(formatSize(bytes))
++        val sub = TextUtils.ellipsize(parts.joinToString(" · "), subPaint, maxText, TextUtils.TruncateAt.END).toString()
++        c.drawText(sub, left, cy + 38f, subPaint)
++        return bmp
++    }
++
++    // ------------------------------------------------------------------ helpers
++
++    fun formatLength(ms: Long): String {
++        val s = (ms + 500) / 1000
++        val h = s / 3600
++        val m = (s % 3600) / 60
++        val sec = s % 60
++        return if (h > 0) String.format(Locale.ROOT, "%d:%02d:%02d", h, m, sec) else String.format(Locale.ROOT, "%d:%02d", m, sec)
++    }
++
++    private fun formatSize(b: Long): String =
++        when {
++            b >= 1L shl 30 -> String.format(Locale.ROOT, "%.1f GB", b / (1024.0 * 1024 * 1024))
++            b >= 1L shl 20 -> String.format(Locale.ROOT, "%.1f MB", b / (1024.0 * 1024))
++            b >= 1L shl 10 -> String.format(Locale.ROOT, "%.0f KB", b / 1024.0)
++            else -> "$b B"
++        }
++}
+diff --git a/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/VideoPlayer.kt b/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/VideoPlayer.kt
+index 98793e2..2dbf2e6 100644
+--- a/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/VideoPlayer.kt
++++ b/plugins/aegires-e2ee/src/main/kotlin/aegires/e2ee/VideoPlayer.kt
+@@ -13,7 +13,8 @@ import android.widget.VideoView
+ import java.io.File
+ 
+ /**
+- * Full-screen player for a decrypted video file. Discord's own inline player only streams over
++ * Full-screen player for a decrypted video or audio file (audio shows a note symbol and the title
++ * on the black screen; the same transport controls apply). Discord's own inline player only streams over
+  * http(s), so it cannot play the file:// copies we write; Android's VideoView reads the file
+  * directly. Only files under an "aegires" cache folder are accepted.
+  */
+@@ -22,11 +23,15 @@ internal object VideoPlayer {
+ 
+     fun allowed(path: String): Boolean = path.startsWith("/") && path.contains("/aegires/") && !path.contains("..")
+ 
+-    fun show(activity: Activity, path: String) {
++    private val AUDIO = setOf("mp3", "m4a", "aac", "ogg", "oga", "opus", "wav", "flac", "amr", "3ga", "mka")
++
++    fun isAudio(path: String): Boolean = path.substringAfterLast('.', "").lowercase() in AUDIO
++
++    fun show(activity: Activity, path: String, title: String = "") {
+         activity.runOnUiThread {
+             try {
+                 if (!allowed(path) || !File(path).isFile) {
+-                    Toast.makeText(activity, "Video file not found", Toast.LENGTH_SHORT).show()
++                    Toast.makeText(activity, "Media file not found", Toast.LENGTH_SHORT).show()
+                     return@runOnUiThread
+                 }
+                 current?.dismiss()
+@@ -41,7 +46,7 @@ internal object VideoPlayer {
+                 video.setVideoPath(path)
+                 video.setOnPreparedListener { video.start() }
+                 video.setOnErrorListener { _, _, _ ->
+-                    Toast.makeText(activity, "Can't play this video format", Toast.LENGTH_LONG).show()
++                    Toast.makeText(activity, "Can't play this file format", Toast.LENGTH_LONG).show()
+                     dialog.dismiss()
+                     true
+                 }
+@@ -50,6 +55,19 @@ internal object VideoPlayer {
+                     FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER),
+                 )
+ 
++                if (isAudio(path)) {
++                    val label = TextView(activity)
++                    label.text = "\u266A\n" + title.take(80)
++                    label.setTextColor(Color.WHITE)
++                    label.textSize = 22f
++                    label.gravity = Gravity.CENTER
++                    label.setPadding(48, 0, 48, 0)
++                    root.addView(
++                        label,
++                        FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER),
++                    )
++                }
++
+                 val close = TextView(activity)
+                 close.text = "\u2715"
+                 close.setTextColor(Color.WHITE)
+diff --git a/plugins/aegires-e2ee/test/media-embeds.mjs b/plugins/aegires-e2ee/test/media-embeds.mjs
+new file mode 100644
+index 0000000..6515732
+--- /dev/null
++++ b/plugins/aegires-e2ee/test/media-embeds.mjs
+@@ -0,0 +1,266 @@
++// Tests the chat pictures for decrypted video/audio (media.ts), the tap routing to the native
++// player (player.ts) and the opt-in link previews (embeds.ts), against a FAKE native bridge.
++// What Android / Java really do (frame grab, drawing, HTTP) is tested elsewhere or by CI + a phone.
++//
++// Run from the plugin folder:  node test/media-embeds.mjs
++import assert from "node:assert/strict";
++import { register } from "node:module";
++
++let realCrypto = true;
++try {
++  import.meta.resolve("@noble/hashes/sha256");
++  import.meta.resolve("fflate");
++} catch {
++  realCrypto = false;
++  const hooks = `
++    const NAMES = ["blake2b","deflateSync","inflateSync","ghash","hkdf","pbkdf2Async","sha1","sha256"];
++    export async function resolve(spec, ctx, next) {
++      if (/^@noble\\//.test(spec) || spec === "fflate") return { url: "stub:" + spec, shortCircuit: true };
++      return next(spec, ctx);
++    }
++    export async function load(url, ctx, next) {
++      if (url.startsWith("stub:")) {
++        const src = NAMES.map((n) => "export const " + n + " = () => { throw new Error('crypto stub: " + n + "'); };").join("\\n");
++        return { format: "module", source: src, shortCircuit: true };
++      }
++      return next(url, ctx);
++    }`;
++  register("data:text/javascript," + encodeURIComponent(hooks), import.meta.url);
++}
++
++const { bindHost, unbindHost } = await import("../js/host.ts");
++const { attachStorage, storage } = await import("../js/storage.ts");
++const { initStorage } = await import("../js/state.ts");
++const { startNative, stopNative, nativeReady } = await import("../js/engine/engine.ts");
++const { handleAttachments, clearMedia, mediaForUri, decryptedMedia } = await import("../js/patches/media.ts");
++const { firstLinkUrl, embedFor, handleLinkPreviews, clearLinkPreviews } = await import("../js/patches/embeds.ts");
++
++const ok = (m) => console.log("  ok  " + m);
++const CH = "123456789012345678";
++const AUTHOR = "555555555555555555";
++const KAT_B64 = Buffer.from("9ff38392f0eda1da7689e211bae2a5a3ef7d464fa87a243411537fc5564527f8", "hex").toString("base64");
++const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
++
++// ---------------------------------------------------------------- fake bridge + dispatcher
++const calls = [];
++const dispatched = [];
++let previewReply = '{"title":"Hello","description":"World","image":"https://example.com/i.png","site":"Example","w":1200,"h":630}';
++let thumbFails = false;
++
++const bridge = async (name, args) => {
++  calls.push({ name, args });
++  switch (name) {
++    case "aegires.ping": return "pong";
++    case "aegires.argon2id": return KAT_B64;
++    case "aegires.argon2with": return KAT_B64;
++    case "aegires.argon2engine": return "c:arm64-v8a";
++    case "valenced.fs.getConstants": return { cache: "/data/cache" };
++    case "valenced.fs.delete": return "";
++    case "aegires.openfile": return "1234";
++    case "aegires.mediainfo": return args[1] === "video" ? "1080,1920" : "640,480";
++    case "aegires.mediathumb":
++      if (thumbFails) throw new Error("no video frame");
++      return args[0] === "audio" ? "720,216" : "720,1280";
++    case "aegires.linkpreview": return previewReply;
++    default: throw new Error("unexpected native call " + name);
++  }
++};
++
++bindHost({
++  unscoped: {
++    modules: { native: { callNativeMethod: bridge } },
++    discord: { common: { flux: { Dispatcher: { dispatch: (e) => dispatched.push(e) } } } },
++  },
++});
++const store = { cache: undefined, async get() { store.cache = {}; return store.cache; }, async set(v) { store.cache = v; } };
++await attachStorage(store);
++initStorage();
++storage.keyV2 = "ab".repeat(32);
++storage.attachmentsExp = true;
++
++assert.equal(await startNative(), true);
++assert.equal(nativeReady(), true);
++clearMedia();
++await tick();
++
++const att = (id, filename) => ({ id, filename, url: `https://cdn.discordapp.com/attachments/${CH}/${id}/${filename}`, size: 99 });
++const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR }, content: "", attachments });
++
++// ---------------------------------------------------------------- 1. video: picture with play button
++{
++  const m = message("m1", [att("111", "0123456789abcdef0123.enc.mp4")]);
++  handleAttachments(m, CH, AUTHOR, null);
++  await tick(50);
++  const thumbCall = calls.find((c) => c.name === "aegires.mediathumb");
++  assert.deepEqual(thumbCall.args.slice(0, 3), ["video", "/data/cache/aegires/in/111.mp4", "/data/cache/aegires/in/111.thumb.jpg"]);
++  const upd = dispatched.find((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m1");
++  assert.ok(upd, "a MESSAGE_UPDATE with the rewritten attachment is dispatched");
++  const a = upd.message.attachments[0];
++  assert.equal(a.url, "file:///data/cache/aegires/in/111.thumb.jpg");
++  assert.equal(a.proxy_url, a.url);
++  assert.equal(a.content_type, "image/jpeg");
++  assert.equal(a.filename, "0123456789abcdef0123.mp4.jpg");
++  assert.equal(a.width, 720);
++  assert.equal(a.height, 1280);
++  ok("decrypted video: attachment points at the thumbnail (play button), sized like it");
++
++  // a second pass over the same message applies the cached result at once
++  const again = message("m1", [att("111", "0123456789abcdef0123.enc.mp4")]);
++  handleAttachments(again, CH, AUTHOR, null);
++  assert.equal(again.attachments[0].url, "file:///data/cache/aegires/in/111.thumb.jpg");
++  ok("cached video is rewritten immediately on the next event");
++
++  // tap routing: the thumbnail uri maps back to the video file
++  const hit = mediaForUri("file:///data/cache/aegires/in/111.thumb.jpg?x=1");
++  assert.deepEqual(hit, { path: "/data/cache/aegires/in/111.mp4", title: "Video" });
++  assert.deepEqual(decryptedMedia(["111"]), hit);
++  assert.deepEqual(decryptedMedia([], "m1", 0), hit);
++  assert.equal(mediaForUri("file:///data/cache/aegires/in/111.mp4").path, "/data/cache/aegires/in/111.mp4");
++  assert.equal(mediaForUri("file:///data/cache/aegires/in/222.png"), null);
++  assert.equal(mediaForUri("file:///etc/passwd.mp4"), null);
++  assert.equal(mediaForUri("https://cdn.discordapp.com/x/aegires/y.mp4"), null);
++  ok("tap routing: thumbnail -> video file; images, foreign paths and http urls are not ours");
++}
++
++// ---------------------------------------------------------------- 2. video without a thumbnail falls back
++{
++  thumbFails = true;
++  const m = message("m2", [att("112", "0123456789abcdef0123.enc.mov")]);
++  handleAttachments(m, CH, AUTHOR, null);
++  await tick(50);
++  const upd = dispatched.find((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m2");
++  const a = upd.message.attachments[0];
++  assert.equal(a.url, "file:///data/cache/aegires/in/112.mov");
++  assert.equal(a.content_type, "image/jpeg");
++  assert.equal(a.width, 1080);
++  thumbFails = false;
++  ok("if the thumbnail cannot be made, the video file itself is shown as before");
++}
++
++// ---------------------------------------------------------------- 3. audio: card + title
++{
++  const m = message("m3", [att("113", "My Song.enc.m4a"), att("114", "0123456789abcdef0123.enc.mp3")]);
++  handleAttachments(m, CH, AUTHOR, null);
++  await tick(80);
++  const upd = dispatched.find((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m3");
++  assert.ok(upd);
++  const [a, b] = upd.message.attachments;
++  assert.equal(a.url, "file:///data/cache/aegires/in/113.thumb.jpg");
++  assert.equal(a.width, 720);
++  assert.equal(a.height, 216);
++  assert.equal(a.content_type, "image/jpeg");
++  const t1 = calls.filter((c) => c.name === "aegires.mediathumb" && c.args[0] === "audio");
++  assert.equal(t1.find((c) => c.args[1].endsWith("113.m4a")).args[3], "My Song");
++  assert.equal(t1.find((c) => c.args[1].endsWith("114.mp3")).args[3], "Audio");
++  assert.deepEqual(mediaForUri(a.url), { path: "/data/cache/aegires/in/113.m4a", title: "My Song" });
++  assert.equal(mediaForUri(b.url).title, "Audio");
++  assert.ok(!calls.some((c) => c.name === "aegires.mediainfo" && c.args[0].endsWith("113.m4a")), "no image/video probe for audio");
++  ok("decrypted audio: card picture, readable name as title, random names become 'Audio'");
++}
++
++// ---------------------------------------------------------------- 4. audio thumbnail failure is a failed attachment
++{
++  thumbFails = true;
++  const before = dispatched.length;
++  const m = message("m4", [att("115", "x.enc.mp3")]);
++  handleAttachments(m, CH, AUTHOR, null);
++  await tick(50);
++  assert.equal(dispatched.length, before, "nothing is rewritten when an audio card cannot be made");
++  thumbFails = false;
++  ok("audio without a card is left alone (no half-rewritten attachment)");
++}
++
++// ---------------------------------------------------------------- 5. link url extraction
++{
++  const cases = [
++    ["see https://example.com/a?b=1.", "https://example.com/a?b=1"],
++    ["(https://example.com/x)", "https://example.com/x"],
++    ["https://en.wikipedia.org/wiki/Foo_(bar)", "https://en.wikipedia.org/wiki/Foo_(bar)"],
++    ["<https://example.com/no> https://example.org/yes", "https://example.org/yes"],
++    ["<https://example.com/no>", null],
++    ["http://insecure.example.com", null],
++    ["no link here", null],
++    ["a https://", null],
++    ["x https://example.com/path, then more", "https://example.com/path"],
++    [42, null],
++  ];
++  for (const [text, want] of cases) assert.equal(firstLinkUrl(text), want, String(text));
++  ok("first https link: trailing punctuation, parentheses, <no embed> syntax, http and junk");
++
++  const e = embedFor("https://example.com/p", { title: "T", description: "D", image: "https://example.com/i.png", site: "S", w: 800, h: 400 });
++  assert.deepEqual(e, { type: "link", url: "https://example.com/p", title: "T", description: "D", provider: { name: "S" }, thumbnail: { url: "https://example.com/i.png", proxy_url: "https://example.com/i.png", width: 800, height: 400 } });
++  const e2 = embedFor("https://e.com", { title: "T", image: "https://e.com/i.png" });
++  assert.equal(e2.thumbnail.width, 1200);
++  assert.equal(e2.thumbnail.height, 630);
++  ok("embed object shape (size from the page, or a typical card size)");
++}
++
++// ---------------------------------------------------------------- 6. link previews: off by default, on when asked
++{
++  clearLinkPreviews();
++  calls.length = 0;
++  dispatched.length = 0;
++  assert.equal(storage.linkPreviews, false);
++  const off = { id: "p1", channel_id: CH, content: "x https://example.com/a" };
++  handleLinkPreviews(off, "x https://example.com/a", CH);
++  await tick();
++  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 0);
++  assert.equal(off.embeds, undefined);
++  ok("link previews are OFF by default: no lookup is made");
++
++  storage.linkPreviews = true;
++  const m1 = { id: "p1", channel_id: CH, content: "x https://example.com/a" };
++  const m2 = { id: "p2", channel_id: CH, content: "again https://example.com/a" };
++  handleLinkPreviews(m1, "x https://example.com/a", CH);
++  handleLinkPreviews(m2, "again https://example.com/a", CH);
++  await tick(50);
++  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 1, "one lookup for the same link");
++  const ups = dispatched.filter((e) => e.type === "MESSAGE_UPDATE");
++  assert.deepEqual(ups.map((e) => e.message.id).sort(), ["p1", "p2"]);
++  assert.equal(ups[0].message.embeds[0].title, "Hello");
++  assert.equal(ups[0].message.embeds[0].thumbnail.width, 1200);
++  ok("on: one lookup per link, every waiting message gets its embed");
++
++  const m3 = { id: "p3", channel_id: CH, content: "https://example.com/a" };
++  handleLinkPreviews(m3, "https://example.com/a", CH);
++  assert.equal(m3.embeds.length, 1);
++  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 1);
++  ok("a cached preview is attached at once, without another lookup");
++
++  const real = { id: "p4", channel_id: CH, content: "https://example.com/zzz", embeds: [{ type: "rich" }] };
++  handleLinkPreviews(real, "https://example.com/zzz", CH);
++  assert.equal(real.embeds.length, 1);
++  assert.equal(real.embeds[0].type, "rich");
++  ok("a message that already has an embed is left alone");
++
++  // no data on the page: nothing is shown, and it is not asked again
++  previewReply = "";
++  calls.length = 0;
++  dispatched.length = 0;
++  const e1 = { id: "p5", channel_id: CH, content: "https://nodata.example.com/" };
++  handleLinkPreviews(e1, "https://nodata.example.com/", CH);
++  await tick(50);
++  assert.equal(dispatched.length, 0);
++  handleLinkPreviews({ id: "p6", channel_id: CH }, "https://nodata.example.com/", CH);
++  await tick(20);
++  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 1);
++  ok("a page without data gives no embed and is not looked up again");
++
++  // a failing lookup is remembered too
++  const failing = async (name, args) => { if (name === "aegires.linkpreview") throw new Error("address not public"); return bridge(name, args); };
++  bindHost({ unscoped: { modules: { native: { callNativeMethod: failing } }, discord: { common: { flux: { Dispatcher: { dispatch: (e) => dispatched.push(e) } } } } } });
++  const f1 = { id: "p7", channel_id: CH };
++  handleLinkPreviews(f1, "https://127.0.0.1/admin", CH);
++  await tick(30);
++  assert.equal(f1.embeds, undefined);
++  ok("a refused / failed lookup shows nothing and does not break the message");
++
++  // turning it off in settings clears what was learned
++  clearLinkPreviews();
++  storage.linkPreviews = false;
++}
++
++stopNative();
++clearMedia();
++unbindHost();
++console.log("\nmedia and link preview tests passed." + (realCrypto ? "" : " (crypto packages were stubbed)"));
+diff --git a/plugins/aegires-e2ee/test/native/LinkPreviewTest.java b/plugins/aegires-e2ee/test/native/LinkPreviewTest.java
+new file mode 100644
+index 0000000..2c5268f
+--- /dev/null
++++ b/plugins/aegires-e2ee/test/native/LinkPreviewTest.java
+@@ -0,0 +1,87 @@
++package aegires.e2ee;
++
++import java.net.InetAddress;
++import java.nio.charset.StandardCharsets;
++import java.util.Map;
++
++/**
++ * Link preview parsing and address rules (no network). From the plugin folder:
++ *   javac -d /tmp/lp src/main/java/aegires/e2ee/LinkPreview.java test/native/LinkPreviewTest.java && java -cp /tmp/lp aegires.e2ee.LinkPreviewTest
++ */
++public class LinkPreviewTest {
++    static int fails = 0;
++
++    static void check(boolean ok, String msg) {
++        if (ok) System.out.println("  ok  " + msg);
++        else {
++            fails++;
++            System.out.println("  FAIL " + msg);
++        }
++    }
++
++    static boolean refused(String url) {
++        try {
++            LinkPreview.checkedUrl(url);
++            return false;
++        } catch (Exception e) {
++            return true;
++        }
++    }
++
++    public static void main(String[] args) throws Exception {
++        String html = "<!doctype html><html><head><meta charset=\"utf-8\">"
++            + "<title>Fallback title</title>"
++            + "<meta property=\"og:title\" content=\"Tom &amp; Jerry &#8211; the &quot;show&quot;\">"
++            + "<meta property='og:description' content='Line one\n   line two &lt;b&gt;'>"
++            + "<meta property=og:image content=/img/card.png>"
++            + "<meta property=\"og:image:width\" content=\"1200\"><meta property=\"og:image:height\" content=\"630\">"
++            + "<meta property=\"og:site_name\" content=\"Example News\">"
++            + "</head><body><meta property=\"og:title\" content=\"IGNORED (after head)\"></body></html>";
++        Map<String, String> r = LinkPreview.parse(html, "https://example.com/a/b");
++        check("Tom & Jerry – the \"show\"".equals(r.get("title")), "title: entities decoded, og:title over <title>");
++        check("Line one line two <b>".equals(r.get("description")), "description: whitespace collapsed, entities decoded");
++        check("https://example.com/img/card.png".equals(r.get("image")), "relative image url made absolute");
++        check("1200".equals(r.get("w")) && "630".equals(r.get("h")), "image size read");
++        check("Example News".equals(r.get("site")), "site name");
++
++        Map<String, String> t = LinkPreview.parse("<head><title> Only a title </title></head>", "https://news.example.org/x");
++        check("Only a title".equals(t.get("title")) && "news.example.org".equals(t.get("site")) && !t.containsKey("image"), "falls back to <title> and the host");
++
++        Map<String, String> http = LinkPreview.parse("<head><meta property=\"og:title\" content=\"x\"><meta property=\"og:image\" content=\"http://cdn.example.com/a.png\"></head>", "https://example.com/");
++        check(!http.containsKey("image"), "a plain http image is dropped");
++
++        check("".equals(LinkPreview.toJson(LinkPreview.parse("<head></head>", "https://example.com/"))), "page with no title and no description gives no embed");
++
++        String json = LinkPreview.toJson(r);
++        check(json.startsWith("{\"title\":\"Tom & Jerry – the \\\"show\\\"\"") && json.endsWith("\"w\":1200,\"h\":630}"), "json is escaped and carries the size");
++        check(LinkPreview.escape("a\"b\\c\nd\u0001").equals("a\\\"b\\\\c\\nd\\u0001"), "json escaping of quotes, backslash, newline, control char");
++
++        String longDesc = "x".repeat(1000);
++        check(LinkPreview.clean(longDesc, 300).length() == 300, "long text is cut to the limit");
++
++        byte[] latin = "<meta charset=\"iso-8859-1\"><title>café</title>".getBytes(StandardCharsets.ISO_8859_1);
++        check(LinkPreview.decode(latin, "text/html").contains("café"), "charset from <meta> is honoured");
++        check(LinkPreview.decode("hé".getBytes(StandardCharsets.UTF_8), "text/html; charset=UTF-8").equals("hé"), "charset from the header is honoured");
++
++        // address rules
++        String[] blocked = {"127.0.0.1", "10.1.2.3", "192.168.0.5", "172.16.9.9", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fc00::1", "fe80::1", "224.0.0.1", "255.255.255.255"};
++        for (String ip : blocked) check(!LinkPreview.isPublic(InetAddress.getByName(ip)), "not public: " + ip);
++        check(LinkPreview.isPublic(InetAddress.getByName("93.184.216.34")), "public: 93.184.216.34");
++        check(LinkPreview.isPublic(InetAddress.getByName("2606:2800:220:1:248:1893:25c8:1946")), "public: IPv6 example");
++
++        check(refused("http://example.com/"), "http refused");
++        check(refused("https://127.0.0.1/"), "loopback literal refused");
++        check(refused("https://192.168.1.1/admin"), "private literal refused");
++        check(refused("https://[::1]/"), "IPv6 loopback refused");
++        check(refused("https://user:pw@93.184.216.34/"), "user info refused");
++        check(refused("https://93.184.216.34:8443/"), "non-443 port refused");
++        check(refused("ftp://93.184.216.34/"), "other scheme refused");
++        check(!refused("https://93.184.216.34/ok?x=1"), "public https literal accepted");
++
++        if (fails > 0) {
++            System.out.println("\n" + fails + " check(s) FAILED");
++            System.exit(1);
++        }
++        System.out.println("\nlink preview tests passed.");
++    }
++}

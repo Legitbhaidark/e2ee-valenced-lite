@@ -182,6 +182,34 @@ val aegiresNative = plugin {
             MediaInfo.probe(appContext, path, kind)
         }
 
+        // Picture for a decrypted video (first frame + play button + length) or audio file (a card),
+        // written as a JPEG under .../aegires/. Returns "W,H".
+        registerNativeAsyncMethod("aegires.mediathumb") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val kind: String by args.string()
+            val src: String by args.string()
+            val outPath: String by args.string()
+            val label: String by args.string()
+            MediaThumb.make(kind, src, outPath, label)
+        }
+
+        // Full-screen playback of a decrypted video or audio file, with a title for audio. Returns "ok".
+        registerNativeMethod("aegires.playmedia") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val path: String by args.string()
+            val title: String by args.string()
+            if (!VideoPlayer.allowed(path)) throw IllegalArgumentException("path not allowed")
+            withAppActivity { VideoPlayer.show(it, path, title) }
+            "ok"
+        }
+
+        // Link preview data (title, description, picture) for one https url, as JSON; "" if none.
+        registerNativeAsyncMethod("aegires.linkpreview") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val url: String by args.string()
+            LinkPreview.fetch(url)
+        }
+
         // Full-screen playback of a decrypted video file (path under .../aegires/). Returns "ok".
         registerNativeMethod("aegires.playvideo") { rawArgs ->
             val args = rawArgs.asDelegate()

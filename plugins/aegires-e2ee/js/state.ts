@@ -41,6 +41,7 @@ export function initStorage(): void {
   storage.encryptByDefault ??= false;
   storage.showLock ??= true;
   storage.attachmentsExp ??= false; // experimental encrypted attachments, opt-in
+  storage.linkPreviews ??= false; // link previews for decrypted messages: this phone contacts the linked site, so opt-in
   storage.debug ??= false;
   if (!DEV_BUILD) {
     // A release build ignores everything the developer options set (e.g. left over from a dev build).

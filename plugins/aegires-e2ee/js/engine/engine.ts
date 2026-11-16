@@ -161,6 +161,32 @@ export async function nativePlayVideo(path: string): Promise<void> {
   await callNative("playvideo", [path], 5000);
 }
 
+/** Opens the native full-screen player on a decrypted video or audio file. The title is shown for audio. */
+export async function nativePlayMedia(path: string, title: string): Promise<void> {
+  await callNative("playmedia", [path, title], 5000);
+}
+
+/**
+ * Writes the chat picture of a decrypted video (first frame + play button + length) or audio file
+ * (a card with title and length) to outPath as a JPEG. Resolves to the picture's pixel size.
+ */
+export async function nativeMediaThumb(kind: "video" | "audio", src: string, outPath: string, label: string): Promise<{ w: number; h: number }> {
+  const out = await callNative("mediathumb", [kind, src, outPath, label], 60000);
+  const m = typeof out === "string" ? /^(\d+),(\d+)$/.exec(out) : null;
+  if (!m || !Number(m[1]) || !Number(m[2])) throw new Error("native returned no picture size");
+  return { w: Number(m[1]), h: Number(m[2]) };
+}
+
+export interface LinkPreviewData { title?: string; description?: string; image?: string; site?: string; w?: number; h?: number }
+
+/** Title / description / picture of one https page, read by the native half ON THIS DEVICE. Null when the page has none. */
+export async function nativeLinkPreview(url: string): Promise<LinkPreviewData | null> {
+  const out = await callNative("linkpreview", [url], 20000);
+  if (typeof out !== "string" || !out) return null;
+  const d = JSON.parse(out);
+  return d && typeof d === "object" ? (d as LinkPreviewData) : null;
+}
+
 /** Deletes a file or folder through Valenced's fs method. Never rejects. */
 export async function removePath(path: string): Promise<void> {
   try {

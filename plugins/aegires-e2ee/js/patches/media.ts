@@ -8,37 +8,59 @@
 //      decrypts it straight into the cache dir, so the bytes never cross the JS bridge. Android
 //      then reports the pixel size.
 //   3. A partial MESSAGE_UPDATE is dispatched so the message store picks up the rewritten attachment.
-// Images, GIFs and videos. Decrypted files are deleted when the plugin starts and when it stops.
+// Images, GIFs, videos and audio. Decrypted files are deleted when the plugin starts and when it stops.
+//
+// Videos and audio cannot be played by Discord from a file:// path, so the chat shows a picture
+// made by the native half (a video's first frame with a play button and its length; for audio a
+// small card with title and length). Tapping that picture opens the native player (player.ts).
 import { storage } from "../storage.ts";
 import { unscoped } from "../host.ts";
 import { base64Encode } from "../crypto/base64.ts";
 import { MAX_FILE_BYTES, extOf, imageMimeFor, isEncryptedFileName, mimeFor, originalFileName, rawCdnUrl } from "../crypto/files.ts";
 import { getReceiveKeysV2 } from "../state.ts";
 import { attachmentsEnabled } from "../features.ts";
-import { cacheDir, nativeMediaInfo, nativeOpenFile, nativeReady, removePath } from "../engine/engine.ts";
+import { cacheDir, nativeMediaInfo, nativeMediaThumb, nativeOpenFile, nativeReady, removePath } from "../engine/engine.ts";
 import { diag } from "../diag.ts";
 
 const log = (...a: any[]) => { if (storage.debug) console.log("[aegires-e2ee:media]", ...a); };
 
-interface Decrypted { uri: string; name: string; mime: string; size: number; w: number; h: number }
+type Kind = "image" | "video" | "audio";
+/** Something the native player can play: the absolute path of the decrypted file and a title for audio. */
+export interface PlayableMedia { path: string; title: string }
+interface Decrypted { uri: string; name: string; mime: string; size: number; w: number; h: number; kind: Kind; thumb?: string; title: string }
 
 const done = new Map<string, Decrypted>(); // attachment id -> decrypted file
 const failed = new Set<string>(); // ids that did not decrypt (no retry until the plugin restarts)
 const queued = new Set<string>();
 const msgAtts = new Map<string, string[]>(); // message id -> its attachment ids (for tap events)
+const thumbs = new Map<string, PlayableMedia>(); // absolute path of a chat picture -> the media it stands for
 
-/** Absolute path of the decrypted video a tap refers to: by attachment ids, or message id + index. */
-export function decryptedVideoPath(ids: string[], messageId?: string, index?: number): string | null {
-  const vid = (d?: Decrypted) => (d && d.mime.startsWith("video/") ? d.uri.replace(/^file:\/\//, "") : null);
+const MEDIA_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp|mp3|m4a|aac|ogg|oga|opus|wav|flac|amr|mka)$/i;
+
+const playable = (d?: Decrypted): PlayableMedia | null =>
+  d && d.kind !== "image" ? { path: d.uri.replace(/^file:\/\//, ""), title: d.title } : null;
+
+/** The decrypted video or audio a tap refers to: by attachment ids, or message id + index. */
+export function decryptedMedia(ids: string[], messageId?: string, index?: number): PlayableMedia | null {
   for (const id of ids) {
-    const p = vid(done.get(id));
+    const p = playable(done.get(id));
     if (p) return p;
   }
   const list = messageId ? msgAtts.get(messageId) : undefined;
   if (!list) return null;
-  if (index != null) return vid(done.get(list[index] ?? ""));
-  const all = list.map((id) => vid(done.get(id))).filter((p): p is string => !!p);
+  if (index != null) return playable(done.get(list[index] ?? ""));
+  const all = list.map((id) => playable(done.get(id))).filter((p): p is PlayableMedia => !!p);
   return all.length === 1 ? all[0] : null;
+}
+
+/** The media behind a file:// uri Discord reports: one of our chat pictures, or a decrypted media file itself. */
+export function mediaForUri(uri: unknown): PlayableMedia | null {
+  if (typeof uri !== "string" || !uri.startsWith("file://") || !uri.includes("/aegires/")) return null;
+  let path = uri.split("?")[0].replace(/^file:\/\//, "");
+  try { path = decodeURIComponent(path); } catch {}
+  const hit = thumbs.get(path);
+  if (hit) return hit;
+  return MEDIA_EXT.test(path) ? { path, title: "" } : null;
 }
 
 /** Settles when the folder of decrypted files left by an earlier session has been emptied. */
@@ -93,13 +115,24 @@ function apply(a: any, d: Decrypted): void {
   // Discord only draws images inline when it knows their size.
   a.width = d.w;
   a.height = d.h;
-  if (d.mime.startsWith("video/")) {
+  if (d.kind !== "image") {
     // Discord's inline player streams only over http(s) and fails on file://. Declared as an
-    // image, the chat draws the video's first frame instead (its image loader reads local
-    // videos). Playing it on tap is a separate step.
+    // image, the chat draws our picture instead: the native half's thumbnail (play button on a
+    // video's first frame, or an audio card). If no thumbnail could be made, a video file is shown
+    // as is (Discord's image loader reads its first frame). Playing it on tap is player.ts.
+    if (d.thumb) {
+      a.url = "file://" + d.thumb;
+      a.proxy_url = a.url;
+    }
     a.content_type = "image/jpeg";
     a.filename = d.name + ".jpg";
   }
+}
+
+/** What the audio card and the player call a file: its name without the extension, unless that is just random hex. */
+function titleFor(name: string, kind: Kind): string {
+  const stem = name.replace(/\.[^./]+$/, "");
+  return !stem || /^[0-9a-f]{16,}$/i.test(stem) ? (kind === "video" ? "Video" : "Audio") : stem;
 }
 
 async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: string, authorId: string): Promise<Decrypted> {
@@ -121,9 +154,30 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
   }
   if (size < 0) throw last ?? new Error("wrong key or corrupted file");
   const mime = mimeFor(name);
-  const video = mime.startsWith("video/");
-  const info = await nativeMediaInfo(out, video ? "video" : "image").catch(() => null);
-  return { uri: "file://" + out, name, mime, size, w: info?.w ?? (Number(a.width) || (video ? 640 : 480)), h: info?.h ?? (Number(a.height) || (video ? 360 : 360)) };
+  const kind: Kind = mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "image";
+  const title = titleFor(name, kind);
+  let w = 0;
+  let h = 0;
+  let thumb: string | undefined;
+  if (kind !== "audio") {
+    const info = await nativeMediaInfo(out, kind).catch(() => null);
+    w = info?.w ?? (Number(a.width) || (kind === "video" ? 640 : 480));
+    h = info?.h ?? (Number(a.height) || 360);
+  }
+  if (kind !== "image") {
+    const thumbPath = `${await cacheDir()}/aegires/in/${id}.thumb.jpg`;
+    try {
+      const t = await nativeMediaThumb(kind, out, thumbPath, title);
+      thumb = thumbPath;
+      w = t.w;
+      h = t.h;
+      thumbs.set(thumbPath, { path: out, title });
+    } catch (e) {
+      if (kind === "audio") throw e; // an audio file has no picture of its own to fall back to
+      log("no thumbnail for the video", id, e);
+    }
+  }
+  return { uri: "file://" + out, name, mime, size, w, h, kind, thumb, title };
 }
 
 // ---------------------------------------------------------------- entry points
@@ -135,7 +189,8 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
   for (const a of m.attachments) {
     if (!isEncAttachment(a)) continue;
     const orig = originalFileName(String(a.filename));
-    if (!imageMimeFor(orig) && !mimeFor(orig).startsWith("video/")) continue;
+    const mime = mimeFor(orig);
+    if (!imageMimeFor(orig) && !mime.startsWith("video/") && !mime.startsWith("audio/")) continue;
     const id = idOf(a);
     if (!id) continue;
     const hit = done.get(id);
@@ -185,6 +240,7 @@ export function clearMedia(): void {
   failed.clear();
   queued.clear();
   msgAtts.clear();
+  thumbs.clear();
   purged = (async () => {
     try {
       await removePath(`${await cacheDir()}/aegires/in`);
