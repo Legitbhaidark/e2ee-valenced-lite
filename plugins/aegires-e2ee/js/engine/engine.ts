@@ -161,6 +161,62 @@ export async function nativePlayVideo(path: string): Promise<void> {
   await callNative("playvideo", [path], 5000);
 }
 
+/** Opens the native full-screen player on a decrypted video or audio file. The title is shown for audio. */
+export async function nativePlayMedia(path: string, title: string): Promise<void> {
+  await callNative("playmedia", [path, title], 5000);
+}
+
+/**
+ * Writes the chat picture of a decrypted video (first frame + play button + length) or audio file
+ * (a card with title and length) to outPath as a JPEG. Resolves to the picture's pixel size.
+ */
+export async function nativeMediaThumb(kind: "video" | "audio", src: string, outPath: string, label: string): Promise<{ w: number; h: number }> {
+  const out = await callNative("mediathumb", [kind, src, outPath, label], 60000);
+  const m = typeof out === "string" ? /^(\d+),(\d+)$/.exec(out) : null;
+  if (!m || !Number(m[1]) || !Number(m[2])) throw new Error("native returned no picture size");
+  return { w: Number(m[1]), h: Number(m[2]) };
+}
+
+/** Fraction (0-100) of the running decryption into outPath, or null when none is running / the size is unknown. */
+export async function nativeProgress(outPath: string): Promise<number | null> {
+  const out = await callNative("progress", [outPath], 3000);
+  const m = typeof out === "string" ? /^(\d+),(-?\d+)$/.exec(out) : null;
+  if (!m) return null;
+  const read = Number(m[1]);
+  const total = Number(m[2]);
+  return total > 0 ? Math.max(0, Math.min(100, Math.floor((read / total) * 100))) : null;
+}
+
+/** Sets the header "E2EE" button (native overlay): "on" | "off" | "locked" | "hide". */
+export async function nativeEncButton(state: "on" | "off" | "locked" | "hide"): Promise<void> {
+  await callNative("encbutton", [state], 3000);
+}
+
+/** Presses of the header button since the last call. */
+export async function nativeEncButtonTaps(): Promise<number> {
+  const out = await callNative("encbuttontaps", [], 3000);
+  const n = typeof out === "string" ? parseInt(out, 10) : Number(out);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Writes the "not decrypted yet" picture (state "tap" or "work") for a file of the given kind; resolves to its pixel size. */
+export async function nativePlaceholder(kind: "image" | "video" | "audio", state: "tap" | "work", percent: number | null, sizeBytes: number, outPath: string): Promise<{ w: number; h: number }> {
+  const out = await callNative("placeholder", [kind, state, String(percent ?? -1), String(Math.max(0, Math.floor(sizeBytes))), outPath], 15000);
+  const m = typeof out === "string" ? /^(\d+),(\d+)$/.exec(out) : null;
+  if (!m || !Number(m[1]) || !Number(m[2])) throw new Error("native returned no picture size");
+  return { w: Number(m[1]), h: Number(m[2]) };
+}
+
+export interface LinkPreviewData { title?: string; description?: string; image?: string; site?: string; w?: number; h?: number }
+
+/** Title / description / picture of one https page, read by the native half ON THIS DEVICE. Null when the page has none. */
+export async function nativeLinkPreview(url: string): Promise<LinkPreviewData | null> {
+  const out = await callNative("linkpreview", [url], 20000);
+  if (typeof out !== "string" || !out) return null;
+  const d = JSON.parse(out);
+  return d && typeof d === "object" ? (d as LinkPreviewData) : null;
+}
+
 /** Deletes a file or folder through Valenced's fs method. Never rejects. */
 export async function removePath(path: string): Promise<void> {
   try {

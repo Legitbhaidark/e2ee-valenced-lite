@@ -32,6 +32,29 @@ export function makeSizeTag(width: number, height: number): string {
   return `[sz:${Math.round(width)},${Math.round(height)}]`;
 }
 
+/**
+ * A message with several pictures carries one tag per attachment, in upload order: "[sz:W,H][sz:W,H]...".
+ * "[sz:0,0]" stands for an attachment with no known size. A single picture gives the one tag Aegires
+ * has always used. Returns "" when no size is known.
+ */
+export function makeSizeTags(sizes: Array<{ w: number; h: number } | null>): string {
+  let last = sizes.length;
+  while (last > 0 && !sizes[last - 1]) last--;
+  if (!last) return "";
+  return sizes.slice(0, last).map((s) => (s ? makeSizeTag(s.w, s.h) : "[sz:0,0]")).join("");
+}
+
+/** Every leading "[sz:W,H]" tag of a decrypted body (first = first attachment) and the text after them. */
+export function splitSizeTags(body: string): { sizes: Array<{ w: number; h: number }>; text: string } {
+  const sizes: Array<{ w: number; h: number }> = [];
+  let rest = body;
+  for (let m = SIZE_TAG.exec(rest); m && sizes.length < 10; m = SIZE_TAG.exec(rest)) {
+    sizes.push({ w: parseInt(m[1], 10), h: parseInt(m[2], 10) });
+    rest = rest.slice(m[0].length);
+  }
+  return { sizes, text: rest };
+}
+
 /** Splits a decrypted message body into its optional size tag and the text the user typed. */
 export function splitSizeTag(body: string): { width: number; height: number; text: string } | { width: null; height: null; text: string } {
   const m = SIZE_TAG.exec(body);
@@ -89,6 +112,11 @@ const MIME: Record<string, string> = {
   ogg: "audio/ogg",
   m4a: "audio/mp4",
   wav: "audio/wav",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  opus: "audio/opus",
+  oga: "audio/ogg",
+  amr: "audio/amr",
   pdf: "application/pdf",
   txt: "text/plain",
   zip: "application/zip",

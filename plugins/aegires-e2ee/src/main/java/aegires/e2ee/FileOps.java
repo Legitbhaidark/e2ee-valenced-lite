@@ -53,19 +53,36 @@ public final class FileOps {
         return key;
     }
 
+    /**
+     * Progress of the decryptions running right now, by output path: {bytes read so far, total bytes
+     * or -1 when unknown}. Download and decryption are one stream, so this is the progress of both.
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, long[]> PROGRESS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** "read,total" for a decryption into outPath that is running, "" if there is none. */
+    public static String progress(String outPath) {
+        long[] p = PROGRESS.get(outPath);
+        return p == null ? "" : p[0] + "," + p[1];
+    }
+
     /** Fails with "file too large" as soon as more than max bytes have been read. */
     private static final class Limited extends FilterInputStream {
         private long left;
+        private final long[] prog;
 
-        Limited(InputStream in, long max) {
+        Limited(InputStream in, long max, long[] prog) {
             super(in);
             left = max;
+            this.prog = prog;
         }
 
         @Override
         public int read() throws IOException {
             int b = super.read();
-            if (b >= 0 && --left < 0) throw new IOException("file too large");
+            if (b >= 0) {
+                if (--left < 0) throw new IOException("file too large");
+                if (prog != null) prog[0]++;
+            }
             return b;
         }
 
@@ -75,6 +92,7 @@ public final class FileOps {
             if (n > 0) {
                 left -= n;
                 if (left < 0) throw new IOException("file too large");
+                if (prog != null) prog[0] += n;
             }
             return n;
         }
@@ -89,7 +107,7 @@ public final class FileOps {
         }
     }
 
-    private static InputStream openSource(String src, long max, HttpURLConnection[] conn) throws IOException {
+    private static InputStream openSource(String src, long max, HttpURLConnection[] conn, long[] prog) throws IOException {
         if (src.startsWith("http://") || src.startsWith("https://")) {
             if (!isAllowedUrl(src)) throw new IOException("url not allowed");
             HttpURLConnection c = (HttpURLConnection) new URL(src).openConnection();
@@ -107,11 +125,13 @@ public final class FileOps {
                 throw new IOException("file too large");
             }
             conn[0] = c;
-            return new Limited(new BufferedInputStream(c.getInputStream()), max);
+            if (prog != null) prog[1] = len;
+            return new Limited(new BufferedInputStream(c.getInputStream()), max, prog);
         }
         File f = new File(localPath(src));
         if (f.length() > max) throw new IOException("file too large");
-        return new Limited(new BufferedInputStream(new FileInputStream(f)), max);
+        if (prog != null) prog[1] = f.length();
+        return new Limited(new BufferedInputStream(new FileInputStream(f)), max, prog);
     }
 
     private static long run(boolean seal, SecretKey key, int preset, String ch, String sender, String src, InputStream given, String outPath, long max)
@@ -124,7 +144,9 @@ public final class FileOps {
         if (dir != null) dir.mkdirs();
         HttpURLConnection[] conn = new HttpURLConnection[1];
         boolean ok = false;
-        try (InputStream in = given != null ? given : openSource(src, seal ? max : max + (max >> 4) + 1024, conn);
+        long[] prog = !seal && given == null ? new long[] {0, -1} : null;
+        if (prog != null) PROGRESS.put(outPath, prog);
+        try (InputStream in = given != null ? given : openSource(src, seal ? max : max + (max >> 4) + 1024, conn, prog);
                 OutputStream os = new BufferedOutputStream(new FileOutputStream(part))) {
             boolean res;
             if (seal) {
@@ -137,6 +159,7 @@ public final class FileOps {
             if (!res) throw new IOException(seal ? "encrypt failed" : "decrypt failed");
             ok = true;
         } finally {
+            if (prog != null) PROGRESS.remove(outPath);
             if (conn[0] != null) conn[0].disconnect();
             if (!ok) part.delete();
         }
@@ -179,7 +202,7 @@ public final class FileOps {
         try {
             long max = Long.parseLong(maxBytes);
             long cap = max < 1 || max > MAX_BYTES ? MAX_BYTES : max;
-            return Long.toString(run(true, masterKey(masterB64), Integer.parseInt(presetIndex), channelId, senderId, "", new Limited(new BufferedInputStream(in), cap), outPath, max));
+            return Long.toString(run(true, masterKey(masterB64), Integer.parseInt(presetIndex), channelId, senderId, "", new Limited(new BufferedInputStream(in), cap, null), outPath, max));
         } catch (IOException e) {
             throw new IllegalStateException(e.getMessage() == null ? "io error" : e.getMessage());
         }

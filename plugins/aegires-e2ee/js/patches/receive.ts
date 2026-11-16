@@ -13,7 +13,7 @@ import { noteFound, selectedChannelId } from "../patch.ts";
 import { unscoped } from "../host.ts";
 import { storage } from "../storage.ts";
 import { decryptText, looksEncrypted } from "../crypto/wire.ts";
-import { splitSizeTag } from "../crypto/files.ts";
+import { splitSizeTags } from "../crypto/files.ts";
 import { decryptMessage as decryptV2, messagePreset } from "../crypto/v2.ts";
 import { LOCK, getReceiveKeys, lockMode, getReceiveKeysV2, isEncryptionOn } from "../state.ts";
 import { noteSelfId } from "../self.ts";
@@ -21,6 +21,7 @@ import { notify } from "../notify.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
 import { encryptAttachments } from "../outgoing.ts";
 import { clearMedia, handleAttachments } from "./media.ts";
+import { clearLinkPreviews, handleLinkPreviews } from "./embeds.ts";
 import { diag } from "../diag.ts";
 
 /** Ids of messages we decrypted, so edits of them stay encrypted (see send.ts). */
@@ -41,7 +42,7 @@ function remember(id: unknown): void {
 const authorById = new Map<string, string>();
 
 // The sender's [sz:W,H] size per message: later partial updates of the message carry no text.
-const tagById = new Map<string, { w: number; h: number }>();
+const tagById = new Map<string, Array<{ w: number; h: number }>>();
 
 function authorOf(m: any): string | undefined {
   const id = m.author?.id;
@@ -78,7 +79,7 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
   if (!m || typeof m !== "object") return;
   const channelId: string | undefined = m.channel_id ?? m.channelId ?? fallbackChannelId;
   const authorId = authorOf(m);
-  let tag: { w: number; h: number } | null = null; // the sender's [sz:W,H] pixel size
+  let tags: Array<{ w: number; h: number }> = []; // the sender's [sz:W,H] pixel sizes, one per attachment
 
   if (looksEncrypted(m.content)) {
     diag.encSeen++;
@@ -88,9 +89,10 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       diag.decrypted++;
       remember(m.id);
       // Aegires puts "[sz:W,H]" in front of image captions; hide it from the visible text.
-      const sp = splitSizeTag(plain);
-      if (sp.width !== null && sp.width > 0 && sp.height > 0) tag = { w: sp.width, h: sp.height };
-      m.content = sp.text || sp.width === null ? (storage.showLock && lockMode.front ? LOCK : "") + sp.text : "";
+      const sp = splitSizeTags(plain);
+      tags = sp.sizes;
+      m.content = sp.text || !sp.sizes.length ? (storage.showLock && lockMode.front ? LOCK : "") + sp.text : "";
+      handleLinkPreviews(m, sp.text, channelId);
     } else if (r === "nokey") {
       diag.noKey++;
     } else if (r === "noauthor") {
@@ -101,14 +103,14 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
   }
   if (m.id != null) {
     const key = String(m.id);
-    if (tag) {
-      tagById.set(key, tag);
+    if (tags.length) {
+      tagById.set(key, tags);
       if (tagById.size > 2000) tagById.delete(tagById.keys().next().value as string);
     } else {
-      tag = tagById.get(key) ?? null;
+      tags = tagById.get(key) ?? [];
     }
   }
-  if (Array.isArray(m.attachments) && m.attachments.length) handleAttachments(m, channelId, authorId, tag);
+  if (Array.isArray(m.attachments) && m.attachments.length) handleAttachments(m, channelId, authorId, tags);
   // Reply previews ("replying to ...") carry their own copy of the original message.
   if (m.referenced_message) decryptMessage(m.referenced_message, channelId);
   // Forwarded messages carry snapshots of the original.
@@ -193,6 +195,7 @@ export function installReceivePatch(): () => void {
   if (typeof hook !== "function") throw new Error("Valenced onAnyFluxEventDispatched not found");
 
   clearMedia(); // decrypted files left by an earlier session
+  clearLinkPreviews();
   const unpatch = hook((event: any) => {
     try {
       if (handleEvent(event)) return undefined; // drop this event
@@ -205,6 +208,7 @@ export function installReceivePatch(): () => void {
   return () => {
     unpatch();
     clearMedia();
+    clearLinkPreviews();
     encryptedIds.clear();
     authorById.clear();
   };

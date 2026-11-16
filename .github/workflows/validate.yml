@@ -21,6 +21,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check PR security acknowledgment
         run: |
@@ -34,16 +35,21 @@ jobs:
 
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
+
+      # Pull requests only read the cache that main/dev built (they never write it).
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
 
       - name: Lint the workflow scripts
         run: shellcheck .github/scripts/*.sh
 
       - name: Build all plugins
-        run: ./gradlew --no-daemon packageAllPlugins
+        run: ./gradlew --build-cache packageAllPlugins
         env:
           GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN }} # For Gradle to download the API dependency. Read the warning above about this token.
 

@@ -34,6 +34,9 @@ public final class FileNames {
             case "audio/ogg": return "ogg";
             case "audio/mp4": return "m4a";
             case "audio/wav": return "wav";
+            case "audio/aac": return "aac";
+            case "audio/flac": return "flac";
+            case "audio/opus": return "opus";
             case "application/pdf": return "pdf";
             case "text/plain": return "txt";
             case "application/zip": return "zip";

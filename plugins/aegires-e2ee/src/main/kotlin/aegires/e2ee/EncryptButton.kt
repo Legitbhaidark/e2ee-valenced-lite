@@ -1,0 +1,291 @@
+package aegires.e2ee
+
+import android.app.Activity
+import android.app.Application
+import android.graphics.Rect
+import android.os.Bundle
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.widget.FrameLayout
+import android.widget.TextView
+import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * The small "E2EE" on/off button that sits in the channel header, just left of Discord's search icon.
+ *
+ * Discord draws its screens with React Native, so a view cannot be added to its header safely (the
+ * layout engine owns those views). The button is therefore a separate native overlay on the activity's
+ * window. Each time the window's layout changes it looks for the header's search icon (a view whose
+ * accessibility label contains "search", near the top of the screen) and puts itself to the left of it.
+ * No search icon on screen (a different screen, a different language) means no button.
+ *
+ * The JS side decides what the button shows ([set]) and polls [takeTaps] to learn about presses.
+ * States: "on", "off", "locked" (built-in key: always on, a press only reports), "hide".
+ */
+internal object EncryptButton {
+    private const val HEADER_DP = 200 // the search icon lives in the top 200 dp
+    private const val MAX_ICON_DP = 96 // and is a small view
+
+    private var view: TextView? = null
+    private var host: WeakReference<Activity>? = null
+    private var listener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var observer: ViewTreeObserver? = null
+    private var lifecycle: Application.ActivityLifecycleCallbacks? = null
+    private var app: Application? = null
+    private var searchIcon: WeakReference<View>? = null
+    private var state = "hide"
+    private var placing = false
+    private val taps = AtomicInteger(0)
+
+    /** Presses since the last call. */
+    fun takeTaps(): Int = taps.getAndSet(0)
+
+    fun set(activity: Activity, newState: String) {
+        activity.runOnUiThread {
+            try {
+                state = if (newState == "on" || newState == "off" || newState == "locked") newState else "hide"
+                if (state == "hide") {
+                    detach()
+                    return@runOnUiThread
+                }
+                watchLifecycle(activity)
+                attach(activity)
+                style()
+                searchIcon = null // look again: the screen may have changed since the last call
+                place()
+            } catch (_: Throwable) {
+                // A cosmetic overlay must never crash the app.
+                detach()
+            }
+        }
+    }
+
+    /**
+     * Coming back from the background, or from another screen (settings), Android may have rebuilt the
+     * window: the overlay is put back at once instead of waiting for the next call from JS.
+     */
+    private fun watchLifecycle(activity: Activity) {
+        if (lifecycle != null) return
+        val application = activity.application ?: return
+        val cb = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(a: Activity) {
+                if (state == "hide") return
+                a.runOnUiThread {
+                    try {
+                        attach(a)
+                        style()
+                        searchIcon = null
+                        place()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+
+            override fun onActivityDestroyed(a: Activity) {
+                if (host?.get() === a) detach()
+            }
+
+            override fun onActivityCreated(a: Activity, b: Bundle?) {}
+            override fun onActivityStarted(a: Activity) {}
+            override fun onActivityPaused(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+        }
+        application.registerActivityLifecycleCallbacks(cb)
+        lifecycle = cb
+        app = application
+    }
+
+    /** Drops the lifecycle callbacks (plugin stop). */
+    fun shutdown() {
+        try {
+            lifecycle?.let { app?.unregisterActivityLifecycleCallbacks(it) }
+        } catch (_: Throwable) {
+        }
+        lifecycle = null
+        app = null
+        remove(null)
+    }
+
+    fun remove(activity: Activity?) {
+        when {
+            activity != null -> activity.runOnUiThread { detach() }
+            view != null -> view?.post { detach() } // stop(): no activity at hand, go through the view's own handler
+            else -> detach()
+        }
+    }
+
+    // ------------------------------------------------------------------ the overlay view
+
+    private fun dp(a: Activity, v: Float): Int = (v * a.resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun attach(activity: Activity) {
+        val same = host?.get() === activity && view?.parent != null
+        if (same) {
+            // The window's observer is replaced when the window is rebuilt, and our listener goes with it.
+            val decorNow = activity.window.decorView as? ViewGroup
+            val vto = decorNow?.viewTreeObserver
+            if (vto != null && (vto !== observer || !vto.isAlive)) {
+                listener?.let { l -> try { observer?.takeIf { it.isAlive }?.removeOnGlobalLayoutListener(l) } catch (_: Throwable) {} }
+                val l = ViewTreeObserver.OnGlobalLayoutListener { place() }
+                vto.addOnGlobalLayoutListener(l)
+                listener = l
+                observer = vto
+            }
+            return
+        }
+        detach()
+        val decor = activity.window.decorView as? ViewGroup ?: return
+        val tv = TextView(activity)
+        tv.text = "E2EE"
+        tv.textSize = 11f
+        tv.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        tv.gravity = Gravity.CENTER
+        tv.setPadding(dp(activity, 9f), dp(activity, 4f), dp(activity, 9f), dp(activity, 4f))
+        tv.isClickable = true
+        tv.contentDescription = "Encryption switch"
+        tv.setOnClickListener {
+            taps.incrementAndGet()
+            // Show the change at once; the JS side confirms (or corrects) it a moment later.
+            if (state == "on") state = "off" else if (state == "off") state = "on"
+            style()
+        }
+        tv.visibility = View.INVISIBLE
+        decor.addView(tv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
+        view = tv
+        host = WeakReference(activity)
+        val l = ViewTreeObserver.OnGlobalLayoutListener { place() }
+        decor.viewTreeObserver.addOnGlobalLayoutListener(l)
+        listener = l
+        observer = decor.viewTreeObserver
+        // Safety net: even if no layout callback arrives, the position is checked once a second.
+        tv.postDelayed(object : Runnable {
+            override fun run() {
+                if (view !== tv || tv.parent == null) return
+                place()
+                tv.postDelayed(this, 1000)
+            }
+        }, 1000)
+    }
+
+    private fun detach() {
+        val tv = view
+        val a = host?.get()
+        val l = listener
+        try {
+            if (a != null && l != null) {
+                val vto = observer ?: (a.window.decorView as? ViewGroup)?.viewTreeObserver
+                if (vto != null && vto.isAlive) vto.removeOnGlobalLayoutListener(l)
+            }
+            (tv?.parent as? ViewGroup)?.removeView(tv)
+        } catch (_: Throwable) {
+        }
+        view = null
+        host = null
+        listener = null
+        observer = null
+        searchIcon = null
+    }
+
+    private fun style() {
+        val tv = view ?: return
+        val a = host?.get() ?: return
+        val bg = GradientDrawable()
+        bg.cornerRadius = dp(a, 12f).toFloat()
+        when (state) {
+            "on", "locked" -> {
+                bg.setColor(0xFF23A55A.toInt())
+                tv.setTextColor(Color.WHITE)
+                tv.text = "E2EE"
+            }
+            else -> {
+                bg.setColor(0x33808080)
+                bg.setStroke(dp(a, 1f), 0xFF80848E.toInt())
+                tv.setTextColor(0xFFB5BAC1.toInt())
+                tv.text = "E2EE"
+            }
+        }
+        tv.background = bg
+        tv.alpha = if (state == "locked") 0.85f else 1f
+    }
+
+    // ------------------------------------------------------------------ placement
+
+    private fun place() {
+        if (placing) return
+        placing = true
+        try {
+            val tv = view ?: return
+            val a = host?.get() ?: return
+            val decor = a.window.decorView as? ViewGroup ?: return
+            val icon = findSearchIcon(a, decor)
+            if (icon == null) {
+                tv.visibility = View.INVISIBLE
+                return
+            }
+            tv.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val iconLoc = IntArray(2)
+            val decorLoc = IntArray(2)
+            icon.getLocationOnScreen(iconLoc)
+            decor.getLocationOnScreen(decorLoc)
+            val gap = dp(a, 4f)
+            val x = iconLoc[0] - decorLoc[0] - gap - tv.measuredWidth
+            val y = iconLoc[1] - decorLoc[1] + (icon.height - tv.measuredHeight) / 2
+            tv.translationX = x.toFloat()
+            tv.translationY = y.toFloat()
+            tv.visibility = View.VISIBLE
+            // Only when something was added after us: bringToFront() requests a layout, which would call place() again, forever.
+            if (decor.getChildAt(decor.childCount - 1) !== tv) tv.bringToFront()
+        } finally {
+            placing = false
+        }
+    }
+
+    private fun findSearchIcon(a: Activity, decor: ViewGroup): View? {
+        val screen = Rect(0, 0, a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels)
+        val cached = searchIcon?.get()
+        if (cached != null && isSearchIcon(cached, screen, dp(a, MAX_ICON_DP.toFloat()))) return cached
+        val found = arrayOfNulls<View>(1)
+        walk(decor, 0, dp(a, HEADER_DP.toFloat()), dp(a, MAX_ICON_DP.toFloat()), screen, found)
+        searchIcon = found[0]?.let { WeakReference(it) }
+        return found[0]
+    }
+
+    /**
+     * A real, currently visible search icon. Screens that were left (earlier chats, the settings screen)
+     * can stay in the view tree, hidden behind the new one or moved off to the side; their icons must not
+     * count, or the button follows one of them and "disappears".
+     */
+    private fun isSearchIcon(v: View, screen: Rect, maxIcon: Int): Boolean {
+        if (!v.isAttachedToWindow || !v.isShown || v.alpha <= 0.01f) return false
+        val d = v.contentDescription
+        if (d == null || !d.contains("search", ignoreCase = true)) return false
+        if (v.width !in 1..maxIcon || v.height !in 1..maxIcon) return false
+        val r = Rect()
+        if (!v.getGlobalVisibleRect(r) || r.isEmpty) return false
+        // Mostly inside the screen (a screen sliding in or out is half off it).
+        val inside = Rect(r)
+        if (!inside.intersect(screen)) return false
+        return inside.width() * 2 >= v.width && inside.height() * 2 >= v.height
+    }
+
+    /** Depth-first over the top of the screen only. Later siblings are drawn on top, so the LAST valid icon wins. */
+    private fun walk(v: View, offY: Int, limit: Int, maxIcon: Int, screen: Rect, found: Array<View?>) {
+        if (v === view || v.visibility != View.VISIBLE) return
+        if (isSearchIcon(v, screen, maxIcon)) found[0] = v
+        if (v is ViewGroup) {
+            for (i in 0 until v.childCount) {
+                val c = v.getChildAt(i)
+                val top = offY + c.top - v.scrollY
+                if (top > limit) continue
+                walk(c, top, limit, maxIcon, screen, found)
+            }
+        }
+    }
+}

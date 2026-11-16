@@ -28,6 +28,7 @@ import { benchCrypto, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
 import { getKdfOverride } from "../crypto/kdf2.ts";
 import { diag, diagLines } from "../diag.ts";
 import { EngineHost } from "../engine/engine.ts";
+import { clearLinkPreviews } from "../patches/embeds.ts";
 import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "../about.ts";
 
 // React Native binds after this script is evaluated, so each primitive is resolved at render time.
@@ -136,6 +137,7 @@ function SettingsInner() {
   const [benchMiB, setBenchMiB] = React.useState("8");
   const [benchJs, setBenchJs] = React.useState(false);
   const [benchLines, setBenchLines] = React.useState([] as string[]);
+  const [autoMb, setAutoMb] = React.useState(String(storage.autoDecryptMB ?? 25));
   const [kdfMem, setKdfMem] = React.useState(String(storage.devKdfMemMiB ?? 64));
   const [kdfPasses, setKdfPasses] = React.useState(String(storage.devKdfPasses ?? 3));
   const [pct, setPct] = React.useState(-1); // Argon2id progress, -1 = idle
@@ -160,19 +162,6 @@ function SettingsInner() {
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
       <EngineHost />
-      <Card title="How to use" hint="Quick start. Everything below is explained in the cards further down.">
-        <Text style={{ color: C.text, marginTop: 8, fontWeight: "700" }}>1. Set the shared password</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>Type the password in "Global key" and press Set global key. Everyone in the chat needs the SAME password; Aegires app users type it in the app. Only the derived keys are stored, never the password.</Text>
-        <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>2. Turn encryption on in a chat</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>Open the chat and send a command as a normal message. It is never sent to Discord, you only get a small notice:</Text>
-        <Text selectable style={{ color: C.text, marginTop: 4, fontFamily: "monospace" }}>{"/e2ee on      encrypt this chat\n/e2ee off     send plain text again\n/e2ee status  is it on here?"}</Text>
-        <Text style={{ color: C.muted, marginTop: 4 }}>You can also type / and pick "e2ee" from Discord's command list, or use a backslash instead: \e2ee on. Without a command, the switch below ("Encrypt outgoing messages by default") decides.</Text>
-        <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>3. Chat normally</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>Your messages go out encrypted (they look like a § and random text). Messages from others are decrypted for you, with a lock next to the time. Images, GIFs and videos work too: tap a decrypted video to play it. Turn on "Attachments" in Behaviour to encrypt files you send.</Text>
-        <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>Other things</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>A different password for one chat: use "Per-chat key / switch". Built-in Aegires channels are always encrypted. {DEV_BUILD ? "This is a dev build: Diagnostics, Self-test, Crypto benchmark and Developer options are further down." : "If something looks wrong, check that everyone uses the same password and that encryption is on here (/e2ee status)."}</Text>
-      </Card>
-
       <Card
         title={"Global key " + (hasGlobalKey() ? "(set)" : "(not set)")}
         hint={"Used in every chat that has no channel key. Everyone in the chat must type the SAME password (at least " + passwordRule() + "), and Aegires users must use the same one in the app. The password is not saved - only the keys derived from it (v1 and v2). Deriving the v2 key (Argon2id, 64 MiB) can take a while on a phone."}
@@ -217,6 +206,10 @@ function SettingsInner() {
       <Card title="Behaviour">
         <ToggleRow label="Encrypt outgoing messages by default (in chats without their own on/off setting)" value={!!storage.encryptByDefault} onChange={(v) => { storage.encryptByDefault = v; refresh(); }} />
         <ToggleRow label="Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
+        <ToggleRow label="Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default" value={!!storage.linkPreviews} onChange={(v) => { storage.linkPreviews = v; if (!v) clearLinkPreviews(); refresh(); }} />
+        <Text style={{ color: C.text, marginTop: 8 }}>Encrypted files larger than this many MB show "Tap to decrypt" instead of downloading on their own (0 = always ask, default 25):</Text>
+        <Field value={autoMb} onChange={(v) => { const d = v.replace(/[^0-9]/g, "").slice(0, 4); setAutoMb(d); storage.autoDecryptMB = d === "" ? 25 : Number(d); }} placeholder="MB (default 25)" />
+        <ToggleRow label="Show an E2EE on/off button in the chat header, left of the search icon" value={storage.encButton !== false} onChange={(v) => { storage.encButton = v; refresh(); }} />
         <ToggleRow label="Show a lock icon next to the time of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
         {DEV_BUILD ? <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} /> : null}
       </Card>
@@ -321,7 +314,7 @@ function SettingsInner() {
         <Text style={{ color: C.text, marginTop: 4 }}>{"Version: " + PLUGIN_VERSION}</Text>
         <Text style={{ color: C.text, marginTop: 4 }}>{"Build number: " + BUILD_ID}</Text>
         <Text style={{ color: C.muted, marginTop: 8 }}>{"Message format: Aegires v2 (v1 read-only)"}</Text>
-        <Text style={{ color: C.muted, marginTop: 4 }}>{"File format: Aegires v3"}</Text>
+        <Text style={{ color: C.muted, marginTop: 4 }}>{"File format: Aegires v2"}</Text>
         <Text style={{ color: C.muted, marginTop: 4 }}>{"Native module: " + (diag.installed["native crypto"] ?? "not started")}</Text>
       </Card>
 
