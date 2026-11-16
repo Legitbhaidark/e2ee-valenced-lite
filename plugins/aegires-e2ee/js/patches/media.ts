@@ -217,6 +217,16 @@ async function showPlaceholder(ctx: MsgCtx, a: any, state: "tap" | "work", pct: 
 }
 
 /**
+ * A file that is waiting to be decrypted shows its skeleton at once. (It used to appear only after
+ * 450 ms, so whether you saw it depended on how fast that file happened to decrypt, and until then
+ * the raw encrypted file card showed. Now it is always: skeleton, then the picture.)
+ */
+const SKELETON_DELAY_MS = 0;
+
+/** After a skeleton was replaced by the picture, the message is pushed once more so the chat reloads the thumbnail. */
+const NUDGE_MS = 700;
+
+/**
  * Queues the download + decryption of one attachment. If it takes longer than delayMs, a
  * "Decrypting..." placeholder is shown and its percentage is kept up to date until it is done.
  */
@@ -260,8 +270,14 @@ function startDecrypt(ctx: MsgCtx, a: any, id: string, keys: Uint8Array[], delay
       finished = true;
       clearTimeout(timer);
       queued.delete(id);
+      const hadSkeleton = ph.has(id);
       ph.delete(id); // done: the real picture replaces it; failed: the original file card comes back
       refresh(ctx);
+      if (hadSkeleton) {
+        // The chat can keep drawing the skeleton's file for a moment (its image cache is keyed by uri,
+        // and the row may have been re-bound in between): push the final state once more.
+        setTimeout(() => { if (ctxs.get(ctx.id) === ctx) refresh(ctx); }, NUDGE_MS);
+      }
     }
   });
 }
@@ -396,7 +412,7 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
         .finally(() => drawingTap.delete(id));
       continue;
     }
-    startDecrypt(ctx, a, id, keys, 450);
+    startDecrypt(ctx, a, id, keys, SKELETON_DELAY_MS);
   }
 }
 

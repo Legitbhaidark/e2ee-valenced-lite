@@ -256,10 +256,9 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   sa.size = 1048576;
   handleAttachments(message("m7", [sa]), CH, AUTHOR, []);
   await tick(200);
-  assert.equal(calls.filter((c) => c.name === "aegires.placeholder").length, 0, "no placeholder in the first moment");
-  await tick(500); // 450 ms passed
   let work = calls.filter((c) => c.name === "aegires.placeholder");
-  assert.equal(work.length, 1);
+  assert.equal(work.length, 1, "the skeleton is drawn at once, not after a delay");
+  assert.ok(dispatched.some((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7" && e.message.attachments[0].url.includes(".ph")), "and shown");
   assert.deepEqual(work[0].args.slice(0, 3), ["video", "work", "0"]);
   progressReply = "40,100";
   await tick(700);
@@ -270,12 +269,17 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   await tick(500); // finished (1700 ms)
   const last = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7").pop();
   assert.equal(last.message.attachments[0].url, "file:///data/cache/aegires/in/130.thumb.jpg");
+  const upd0 = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7").length;
+  await tick(800); // the reload nudge
+  const upds = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7");
+  assert.equal(upds.length, upd0 + 1, "one more update re-sends the finished picture");
+  assert.equal(upds[upds.length - 1].message.attachments[0].url, "file:///data/cache/aegires/in/130.thumb.jpg");
   const before = calls.filter((c) => c.name === "aegires.placeholder").length;
   await tick(900);
   assert.equal(calls.filter((c) => c.name === "aegires.placeholder").length, before, "no more redraws after it finished");
   openDelay = 0;
   progressReply = "";
-  ok("slow file: progress placeholder after 450 ms, redrawn on progress, replaced by the result, then silent");
+  ok("slow file: skeleton at once, redrawn on progress, replaced by the result (+ one reload nudge), then silent");
 }
 
 // ---------------------------------------------------------------- 4d. failed decryption brings the file card back
