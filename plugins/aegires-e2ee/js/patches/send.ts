@@ -47,7 +47,6 @@ export function installSendPatch(): () => void {
         }
         if (interceptTyped(channelId, message.content)) return Promise.resolve();
         const files = attachmentsOf(message, options);
-        let tag = "";
         if (files.length && isEncryptionOn(channelId)) {
           // Files were encrypted when they were attached (receive.ts). Anything that is not
           // provably encrypted (or the switch being off) stops the whole send.
@@ -57,16 +56,48 @@ export function installSendPatch(): () => void {
             notify(ATTACHMENTS_BLOCKED_MSG);
             return Promise.resolve();
           }
-          tag = captionSizeTag(files);
         }
-        // The size tag must ride along even when there is no caption: Aegires reads the picture size
-        // only from it, so an image sent without text used to arrive without a size.
-        const out = prepare(channelId, tag ? tag + (typeof message.content === "string" ? message.content : "") : message.content);
-        diag.lastSend = `on=${isEncryptionOn(channelId)} key=${!!getSendKey(channelId)} -> ${out === BLOCK ? "BLOCKED" : out === null ? "sent unchanged" : "encrypted"}`;
-        if (storage.debug) console.log("[aegires-e2ee] sendMessage", channelId, diag.lastSend, options ? Object.keys(options) : "");
-        if (out === BLOCK) return Promise.resolve();
-        if (out !== null) message.content = out;
-        return orig(...args);
+
+        // Sends ONE message: the caption of this message, encrypted, with the size tag of ITS file.
+        const sendOne = (msg: any, opts: any, own: any[]) => {
+          const tag = own.length && isEncryptionOn(channelId) ? captionSizeTag(own) : "";
+          // The size tag must ride along even when there is no caption: Aegires reads the picture size
+          // only from it, so an image sent without text used to arrive without a size.
+          const out = prepare(channelId, tag ? tag + (typeof msg.content === "string" ? msg.content : "") : msg.content);
+          diag.lastSend = `on=${isEncryptionOn(channelId)} key=${!!getSendKey(channelId)} -> ${out === BLOCK ? "BLOCKED" : out === null ? "sent unchanged" : "encrypted"}`;
+          if (storage.debug) console.log("[aegires-e2ee] sendMessage", channelId, diag.lastSend, opts ? Object.keys(opts) : "");
+          if (out === BLOCK) return Promise.resolve();
+          if (out !== null) msg.content = out;
+          const rest = [...args];
+          rest[1] = msg;
+          rest[3] = opts;
+          return orig(...rest);
+        };
+
+        // The Aegires protocol is ONE file per message with ONE "[sz:W,H]" tag, and the app can only
+        // size a message's picture from that tag. So an encrypted batch is sent as one message per
+        // file (the caption goes with the first), each carrying the size of its own picture.
+        if (files.length > 1 && isEncryptionOn(channelId)) {
+          const listKey = ["attachmentsToUpload", "uploads"].find((k) => options?.[k] === files);
+          const inMessage = !listKey && message?.attachmentsToUpload === files;
+          if (listKey || inMessage) {
+            diag.lastSend = `batch of ${files.length}: one message per file`;
+            const caption = typeof message.content === "string" ? message.content : "";
+            let chain: Promise<unknown> = Promise.resolve();
+            files.forEach((f, i) => {
+              chain = chain.then(() => {
+                const msg: any = { ...message, content: i === 0 ? caption : "" };
+                if (i > 0) delete msg.nonce; // every message needs its own nonce
+                let opts = options;
+                if (listKey) opts = { ...options, [listKey]: [f] };
+                else msg.attachmentsToUpload = [f];
+                return sendOne(msg, opts, [f]);
+              });
+            });
+            return chain;
+          }
+        }
+        return sendOne(message, options, files);
       }),
     );
 
