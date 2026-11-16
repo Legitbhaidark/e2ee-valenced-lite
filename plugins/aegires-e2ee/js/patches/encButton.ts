@@ -16,7 +16,7 @@ import { notify } from "../notify.ts";
 import { canSend, isEncryptionOn, isForced, setChannelEnabled } from "../state.ts";
 
 const POLL_MS = 300; // presses and the open chat are checked this often
-const REASSERT_MS = 4000; // the state is re-sent now and then (the overlay is dropped when the activity is recreated)
+const REASSERT_MS = 1500; // the state is re-sent now and then (the overlay is dropped when the activity is recreated)
 
 type BtnState = "on" | "off" | "locked" | "hide";
 

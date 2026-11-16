@@ -1,6 +1,9 @@
 package aegires.e2ee
 
 import android.app.Activity
+import android.app.Application
+import android.graphics.Rect
+import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -32,6 +35,9 @@ internal object EncryptButton {
     private var view: TextView? = null
     private var host: WeakReference<Activity>? = null
     private var listener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var observer: ViewTreeObserver? = null
+    private var lifecycle: Application.ActivityLifecycleCallbacks? = null
+    private var app: Application? = null
     private var searchIcon: WeakReference<View>? = null
     private var state = "hide"
     private var placing = false
@@ -48,14 +54,63 @@ internal object EncryptButton {
                     detach()
                     return@runOnUiThread
                 }
+                watchLifecycle(activity)
                 attach(activity)
                 style()
+                searchIcon = null // look again: the screen may have changed since the last call
                 place()
             } catch (_: Throwable) {
                 // A cosmetic overlay must never crash the app.
                 detach()
             }
         }
+    }
+
+    /**
+     * Coming back from the background, or from another screen (settings), Android may have rebuilt the
+     * window: the overlay is put back at once instead of waiting for the next call from JS.
+     */
+    private fun watchLifecycle(activity: Activity) {
+        if (lifecycle != null) return
+        val application = activity.application ?: return
+        val cb = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(a: Activity) {
+                if (state == "hide") return
+                a.runOnUiThread {
+                    try {
+                        attach(a)
+                        style()
+                        searchIcon = null
+                        place()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+
+            override fun onActivityDestroyed(a: Activity) {
+                if (host?.get() === a) detach()
+            }
+
+            override fun onActivityCreated(a: Activity, b: Bundle?) {}
+            override fun onActivityStarted(a: Activity) {}
+            override fun onActivityPaused(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+        }
+        application.registerActivityLifecycleCallbacks(cb)
+        lifecycle = cb
+        app = application
+    }
+
+    /** Drops the lifecycle callbacks (plugin stop). */
+    fun shutdown() {
+        try {
+            lifecycle?.let { app?.unregisterActivityLifecycleCallbacks(it) }
+        } catch (_: Throwable) {
+        }
+        lifecycle = null
+        app = null
+        remove(null)
     }
 
     fun remove(activity: Activity?) {
@@ -72,7 +127,19 @@ internal object EncryptButton {
 
     private fun attach(activity: Activity) {
         val same = host?.get() === activity && view?.parent != null
-        if (same) return
+        if (same) {
+            // The window's observer is replaced when the window is rebuilt, and our listener goes with it.
+            val decorNow = activity.window.decorView as? ViewGroup
+            val vto = decorNow?.viewTreeObserver
+            if (vto != null && (vto !== observer || !vto.isAlive)) {
+                listener?.let { l -> try { observer?.takeIf { it.isAlive }?.removeOnGlobalLayoutListener(l) } catch (_: Throwable) {} }
+                val l = ViewTreeObserver.OnGlobalLayoutListener { place() }
+                vto.addOnGlobalLayoutListener(l)
+                listener = l
+                observer = vto
+            }
+            return
+        }
         detach()
         val decor = activity.window.decorView as? ViewGroup ?: return
         val tv = TextView(activity)
@@ -96,6 +163,15 @@ internal object EncryptButton {
         val l = ViewTreeObserver.OnGlobalLayoutListener { place() }
         decor.viewTreeObserver.addOnGlobalLayoutListener(l)
         listener = l
+        observer = decor.viewTreeObserver
+        // Safety net: even if no layout callback arrives, the position is checked once a second.
+        tv.postDelayed(object : Runnable {
+            override fun run() {
+                if (view !== tv || tv.parent == null) return
+                place()
+                tv.postDelayed(this, 1000)
+            }
+        }, 1000)
     }
 
     private fun detach() {
@@ -104,7 +180,7 @@ internal object EncryptButton {
         val l = listener
         try {
             if (a != null && l != null) {
-                val vto = (a.window.decorView as? ViewGroup)?.viewTreeObserver
+                val vto = observer ?: (a.window.decorView as? ViewGroup)?.viewTreeObserver
                 if (vto != null && vto.isAlive) vto.removeOnGlobalLayoutListener(l)
             }
             (tv?.parent as? ViewGroup)?.removeView(tv)
@@ -113,6 +189,7 @@ internal object EncryptButton {
         view = null
         host = null
         listener = null
+        observer = null
         searchIcon = null
     }
 
@@ -171,33 +248,43 @@ internal object EncryptButton {
     }
 
     private fun findSearchIcon(a: Activity, decor: ViewGroup): View? {
+        val screen = Rect(0, 0, a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels)
         val cached = searchIcon?.get()
-        if (cached != null && cached.isAttachedToWindow && cached.isShown) return cached
-        val best = arrayOfNulls<View>(1)
-        val bestX = IntArray(1) { Int.MIN_VALUE }
-        walk(decor, 0, dp(a, HEADER_DP.toFloat()), dp(a, MAX_ICON_DP.toFloat()), best, bestX)
-        searchIcon = best[0]?.let { WeakReference(it) }
-        return best[0]
+        if (cached != null && isSearchIcon(cached, screen, dp(a, MAX_ICON_DP.toFloat()))) return cached
+        val found = arrayOfNulls<View>(1)
+        walk(decor, 0, dp(a, HEADER_DP.toFloat()), dp(a, MAX_ICON_DP.toFloat()), screen, found)
+        searchIcon = found[0]?.let { WeakReference(it) }
+        return found[0]
     }
 
-    /** Depth-first over the top of the screen only; [offY] is the window-relative top of [v]'s children's parent. */
-    private fun walk(v: View, offY: Int, limit: Int, maxIcon: Int, best: Array<View?>, bestX: IntArray) {
-        if (v === view || v.visibility != View.VISIBLE) return
+    /**
+     * A real, currently visible search icon. Screens that were left (earlier chats, the settings screen)
+     * can stay in the view tree, hidden behind the new one or moved off to the side; their icons must not
+     * count, or the button follows one of them and "disappears".
+     */
+    private fun isSearchIcon(v: View, screen: Rect, maxIcon: Int): Boolean {
+        if (!v.isAttachedToWindow || !v.isShown || v.alpha <= 0.01f) return false
         val d = v.contentDescription
-        if (d != null && d.contains("search", ignoreCase = true) && v.width in 1..maxIcon && v.height in 1..maxIcon) {
-            val loc = IntArray(2)
-            v.getLocationOnScreen(loc)
-            if (loc[0] > bestX[0] && v.isShown) {
-                bestX[0] = loc[0]
-                best[0] = v
-            }
-        }
+        if (d == null || !d.contains("search", ignoreCase = true)) return false
+        if (v.width !in 1..maxIcon || v.height !in 1..maxIcon) return false
+        val r = Rect()
+        if (!v.getGlobalVisibleRect(r) || r.isEmpty) return false
+        // Mostly inside the screen (a screen sliding in or out is half off it).
+        val inside = Rect(r)
+        if (!inside.intersect(screen)) return false
+        return inside.width() * 2 >= v.width && inside.height() * 2 >= v.height
+    }
+
+    /** Depth-first over the top of the screen only. Later siblings are drawn on top, so the LAST valid icon wins. */
+    private fun walk(v: View, offY: Int, limit: Int, maxIcon: Int, screen: Rect, found: Array<View?>) {
+        if (v === view || v.visibility != View.VISIBLE) return
+        if (isSearchIcon(v, screen, maxIcon)) found[0] = v
         if (v is ViewGroup) {
             for (i in 0 until v.childCount) {
                 val c = v.getChildAt(i)
                 val top = offY + c.top - v.scrollY
                 if (top > limit) continue
-                walk(c, top, limit, maxIcon, best, bestX)
+                walk(c, top, limit, maxIcon, screen, found)
             }
         }
     }

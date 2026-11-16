@@ -253,7 +253,7 @@ val aegiresNative = plugin {
 
     stop {
         VideoPlayer.close()
-        EncryptButton.remove(null)
+        EncryptButton.shutdown()
         log.i("Aegires native crypto unloaded")
     }
 }
