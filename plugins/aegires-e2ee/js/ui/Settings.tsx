@@ -162,19 +162,6 @@ function SettingsInner() {
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
       <EngineHost />
-      <Card title="How to use" hint="Quick start. Everything below is explained in the cards further down.">
-        <Text style={{ color: C.text, marginTop: 8, fontWeight: "700" }}>1. Set the shared password</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>Type the password in "Global key" and press Set global key. Everyone in the chat needs the SAME password; Aegires app users type it in the app. Only the derived keys are stored, never the password.</Text>
-        <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>2. Turn encryption on in a chat</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>Open the chat and send a command as a normal message. It is never sent to Discord, you only get a small notice:</Text>
-        <Text selectable style={{ color: C.text, marginTop: 4, fontFamily: "monospace" }}>{"/e2ee on      encrypt this chat\n/e2ee off     send plain text again\n/e2ee status  is it on here?"}</Text>
-        <Text style={{ color: C.muted, marginTop: 4 }}>You can also type / and pick "e2ee" from Discord's command list, or use a backslash instead: \e2ee on. Without a command, the switch below ("Encrypt outgoing messages by default") decides.</Text>
-        <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>3. Chat normally</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>Your messages go out encrypted (they look like a § and random text). Messages from others are decrypted for you, with a lock next to the time. Images, GIFs and videos work too: tap a decrypted video to play it. Turn on "Attachments" in Behaviour to encrypt files you send.</Text>
-        <Text style={{ color: C.text, marginTop: 10, fontWeight: "700" }}>Other things</Text>
-        <Text style={{ color: C.muted, marginTop: 2 }}>A different password for one chat: use "Per-chat key / switch". Built-in Aegires channels are always encrypted. {DEV_BUILD ? "This is a dev build: Diagnostics, Self-test, Crypto benchmark and Developer options are further down." : "If something looks wrong, check that everyone uses the same password and that encryption is on here (/e2ee status)."}</Text>
-      </Card>
-
       <Card
         title={"Global key " + (hasGlobalKey() ? "(set)" : "(not set)")}
         hint={"Used in every chat that has no channel key. Everyone in the chat must type the SAME password (at least " + passwordRule() + "), and Aegires users must use the same one in the app. The password is not saved - only the keys derived from it (v1 and v2). Deriving the v2 key (Argon2id, 64 MiB) can take a while on a phone."}
@@ -327,7 +314,7 @@ function SettingsInner() {
         <Text style={{ color: C.text, marginTop: 4 }}>{"Version: " + PLUGIN_VERSION}</Text>
         <Text style={{ color: C.text, marginTop: 4 }}>{"Build number: " + BUILD_ID}</Text>
         <Text style={{ color: C.muted, marginTop: 8 }}>{"Message format: Aegires v2 (v1 read-only)"}</Text>
-        <Text style={{ color: C.muted, marginTop: 4 }}>{"File format: Aegires v3"}</Text>
+        <Text style={{ color: C.muted, marginTop: 4 }}>{"File format: Aegires v2"}</Text>
         <Text style={{ color: C.muted, marginTop: 4 }}>{"Native module: " + (diag.installed["native crypto"] ?? "not started")}</Text>
       </Card>
 
