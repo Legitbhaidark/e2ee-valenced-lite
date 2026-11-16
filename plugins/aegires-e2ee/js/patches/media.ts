@@ -173,6 +173,14 @@ function viewOf(orig: any): any {
 
 /** Pushes the current view of a message's attachments into the message store. */
 function refresh(ctx: MsgCtx): void {
+  // A message with several pictures is updated in ONE step once every picture is either decrypted or
+  // showing a placeholder. Updating after each picture would show the others as unsized file cards
+  // first, and Discord keeps that first layout for the whole message.
+  const waitingSibling = ctx.atts.some((x) => {
+    const sid = idOf(x);
+    return isEncAttachment(x) && queued.has(sid) && !done.has(sid) && !ph.has(sid) && !failed.has(sid);
+  });
+  if (waitingSibling && ctx.atts.filter(isEncAttachment).length > 1) return;
   dispatch({ type: "MESSAGE_UPDATE", message: { id: ctx.id, channel_id: ctx.chan, attachments: ctx.atts.map(viewOf) } });
 }
 

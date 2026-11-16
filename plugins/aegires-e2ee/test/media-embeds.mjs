@@ -49,6 +49,7 @@ let thumbFails = false;
 let openDelay = 0;
 let openFail = "";
 let progressReply = "";
+const imageSizes = {}; // path suffix -> "W,H" for the fake probe
 
 const bridge = async (name, args) => {
   calls.push({ name, args });
@@ -65,7 +66,10 @@ const bridge = async (name, args) => {
       return "1234";
     case "aegires.progress": return progressReply;
     case "aegires.placeholder": return args[0] === "audio" ? "720,216" : "640,360";
-    case "aegires.mediainfo": return args[1] === "video" ? "1080,1920" : "640,480";
+    case "aegires.mediainfo": {
+      const k = Object.keys(imageSizes).find((x) => args[0].endsWith(x));
+      return k ? imageSizes[k] : args[1] === "video" ? "1080,1920" : "640,480";
+    }
     case "aegires.mediathumb":
       if (thumbFails) throw new Error("no video frame");
       return args[0] === "audio" ? "720,216" : "720,1280";
@@ -284,6 +288,27 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   assert.equal(last.message.attachments[0].url, f.url);
   openFail = "";
   ok("a failed decryption restores the original attachment");
+}
+
+// ---------------------------------------------------------------- 4e. several pictures in one message
+{
+  calls.length = 0;
+  dispatched.length = 0;
+  Object.assign(imageSizes, { "151.png": "1000,500", "152.png": "300,900", "153.png": "800,800" });
+  const files = ["151", "152", "153"].map((id) => att(id, "0123456789abcdef0123.enc.png"));
+  handleAttachments(message("m9", files), CH, AUTHOR, { w: 1000, h: 500 }); // the sender's tag = first picture only
+  await tick(120);
+  const ups = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m9");
+  assert.ok(ups.length >= 1, "message updated");
+  const last = ups[ups.length - 1].message.attachments;
+  assert.deepEqual(last.map((a) => [a.width, a.height]), [[1000, 500], [300, 900], [800, 800]]);
+  // no update ever shows a decrypted picture next to a sibling that is still an unsized file card
+  for (const u of ups) {
+    const atts = u.message.attachments;
+    assert.ok(atts.every((a) => a.url.startsWith("file://") || !atts.some((b) => b.url.startsWith("file://"))), "no half-finished mix");
+  }
+  assert.equal(ups.length, 1, "one update for the whole batch");
+  ok("3 pictures of different sizes: each gets its own real size, delivered in one update");
 }
 
 // ---------------------------------------------------------------- 5. link url extraction

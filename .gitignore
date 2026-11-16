@@ -15,3 +15,6 @@ node_modules/
 *.iml
 package-lock.json
 *.tar.gz
+
+# Android media scanner marker files
+.nomedia
