@@ -101,7 +101,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 // ---------------------------------------------------------------- 1. video: picture with play button
 {
   const m = message("m1", [att("111", "0123456789abcdef0123.enc.mp4")]);
-  handleAttachments(m, CH, AUTHOR, null);
+  handleAttachments(m, CH, AUTHOR, []);
   await tick(50);
   const thumbCall = calls.find((c) => c.name === "aegires.mediathumb");
   assert.deepEqual(thumbCall.args.slice(0, 3), ["video", "/data/cache/aegires/in/111.mp4", "/data/cache/aegires/in/111.thumb.jpg"]);
@@ -118,7 +118,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 
   // a second pass over the same message applies the cached result at once
   const again = message("m1", [att("111", "0123456789abcdef0123.enc.mp4")]);
-  handleAttachments(again, CH, AUTHOR, null);
+  handleAttachments(again, CH, AUTHOR, []);
   assert.equal(again.attachments[0].url, "file:///data/cache/aegires/in/111.thumb.jpg");
   ok("cached video is rewritten immediately on the next event");
 
@@ -138,7 +138,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 {
   thumbFails = true;
   const m = message("m2", [att("112", "0123456789abcdef0123.enc.mov")]);
-  handleAttachments(m, CH, AUTHOR, null);
+  handleAttachments(m, CH, AUTHOR, []);
   await tick(50);
   const upd = dispatched.find((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m2");
   const a = upd.message.attachments[0];
@@ -152,7 +152,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 // ---------------------------------------------------------------- 3. audio: card + title
 {
   const m = message("m3", [att("113", "My Song.enc.m4a"), att("114", "0123456789abcdef0123.enc.mp3")]);
-  handleAttachments(m, CH, AUTHOR, null);
+  handleAttachments(m, CH, AUTHOR, []);
   await tick(80);
   const upd = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m3").pop();
   assert.ok(upd);
@@ -174,7 +174,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 {
   thumbFails = true;
   const m = message("m4", [att("115", "x.enc.mp3")]);
-  handleAttachments(m, CH, AUTHOR, null);
+  handleAttachments(m, CH, AUTHOR, []);
   await tick(50);
   const last = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m4").pop();
   assert.equal(last.message.attachments[0].url, att("115", "x.enc.mp3").url, "the original file card is shown again");
@@ -197,8 +197,8 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   const big = att("120", "0123456789abcdef0123.enc.mp4");
   big.size = 60 * 1048576;
   const m = message("m5", [big]);
-  handleAttachments(m, CH, AUTHOR, null);
-  handleAttachments(message("m5", [{ ...big }]), CH, AUTHOR, null); // a second event while it is being drawn
+  handleAttachments(m, CH, AUTHOR, []);
+  handleAttachments(message("m5", [{ ...big }]), CH, AUTHOR, []); // a second event while it is being drawn
   await tick(50);
   assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 0, "nothing is downloaded before the tap");
   const drawn = calls.filter((c) => c.name === "aegires.placeholder");
@@ -214,7 +214,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 
   // later events re-apply the placeholder synchronously
   const again = message("m5", [{ ...big }]);
-  handleAttachments(again, CH, AUTHOR, null);
+  handleAttachments(again, CH, AUTHOR, []);
   assert.equal(again.attachments[0].url, a.url);
   ok("the placeholder is re-applied at once on the next event");
 
@@ -239,7 +239,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   // limit 0 = ask for everything
   storage.autoDecryptMB = 0;
   calls.length = 0;
-  handleAttachments(message("m6", [att("121", "0123456789abcdef0123.enc.png")]), CH, AUTHOR, null);
+  handleAttachments(message("m6", [att("121", "0123456789abcdef0123.enc.png")]), CH, AUTHOR, []);
   await tick(50);
   assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 0);
   assert.equal(calls.filter((c) => c.name === "aegires.placeholder")[0].args[0], "image");
@@ -254,7 +254,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   progressReply = "0,100";
   const sa = att("130", "0123456789abcdef0123.enc.mp4");
   sa.size = 1048576;
-  handleAttachments(message("m7", [sa]), CH, AUTHOR, null);
+  handleAttachments(message("m7", [sa]), CH, AUTHOR, []);
   await tick(200);
   assert.equal(calls.filter((c) => c.name === "aegires.placeholder").length, 0, "no placeholder in the first moment");
   await tick(500); // 450 ms passed
@@ -282,7 +282,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 {
   openFail = "decrypt failed";
   const f = att("140", "0123456789abcdef0123.enc.mp4");
-  handleAttachments(message("m8", [f]), CH, AUTHOR, null);
+  handleAttachments(message("m8", [f]), CH, AUTHOR, []);
   await tick(80);
   const last = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m8").pop();
   assert.equal(last.message.attachments[0].url, f.url);
@@ -296,7 +296,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   dispatched.length = 0;
   Object.assign(imageSizes, { "151.png": "1000,500", "152.png": "300,900", "153.png": "800,800" });
   const files = ["151", "152", "153"].map((id) => att(id, "0123456789abcdef0123.enc.png"));
-  handleAttachments(message("m9", files), CH, AUTHOR, { w: 1000, h: 500 }); // the sender's tag = first picture only
+  handleAttachments(message("m9", files), CH, AUTHOR, [{ w: 1000, h: 500 }, { w: 300, h: 900 }, { w: 800, h: 800 }]); // the sender's tag = first picture only
   await tick(120);
   const ups = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m9");
   assert.ok(ups.length >= 1, "message updated");
@@ -309,6 +309,21 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   }
   assert.equal(ups.length, 1, "one update for the whole batch");
   ok("3 pictures of different sizes: each gets its own real size, delivered in one update");
+}
+
+// ---------------------------------------------------------------- 4f. size tags: one per attachment
+{
+  const { makeSizeTags, splitSizeTags, splitSizeTag } = await import("../js/crypto/files.ts");
+  assert.equal(makeSizeTags([{ w: 1000, h: 500 }]), "[sz:1000,500]", "one picture: the classic single tag");
+  assert.equal(makeSizeTags([{ w: 1000, h: 500 }, { w: 300, h: 900 }]), "[sz:1000,500][sz:300,900]");
+  assert.equal(makeSizeTags([null, { w: 3, h: 4 }, null]), "[sz:0,0][sz:3,4]", "unknown sizes keep their place, trailing ones are dropped");
+  assert.equal(makeSizeTags([null]), "");
+  const sp = splitSizeTags("[sz:1000,500][sz:300,900][sz:800,800]hello [sz:1,2]");
+  assert.deepEqual(sp.sizes, [{ w: 1000, h: 500 }, { w: 300, h: 900 }, { w: 800, h: 800 }]);
+  assert.equal(sp.text, "hello [sz:1,2]");
+  assert.deepEqual(splitSizeTags("no tags"), { sizes: [], text: "no tags" });
+  assert.equal(splitSizeTag("[sz:1,2][sz:3,4]x").text, "[sz:3,4]x", "the old one-tag reader is unchanged");
+  ok("size tags: one per attachment in order, unknown kept as [sz:0,0], text after the tags untouched");
 }
 
 // ---------------------------------------------------------------- 5. link url extraction

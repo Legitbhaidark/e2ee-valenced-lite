@@ -6,7 +6,7 @@
 import { notify } from "./notify.ts";
 import { RN } from "./rt.ts";
 import { MAX_PLAINTEXT_LEN, encryptBytes, encryptText, looksEncrypted } from "./crypto/wire.ts";
-import { MAX_FILE_BYTES, encryptedFileName, extOf, imageDims, imageMimeFor, makeSizeTag, mimeFor, videoDims } from "./crypto/files.ts";
+import { MAX_FILE_BYTES, encryptedFileName, extOf, imageDims, imageMimeFor, makeSizeTags, mimeFor, videoDims } from "./crypto/files.ts";
 import { storage } from "./storage.ts";
 import { encryptFile, encryptMessage, maxPlaintextBytes, utf8Length } from "./crypto/v2.ts";
 import { getSendFormat, getSendKey, getSendKeyV2, getSendPreset, isEncryptionOn } from "./state.ts";
@@ -165,14 +165,14 @@ export function uploadFileName(u: any): string {
 /** Same, by the random encrypted file name: survives Discord copying the file to another uri. */
 const sizesByName = new Map<string, { w: number; h: number } | null>();
 
-/** "[sz:W,H]" prefix for the caption, from the first already-encrypted image among the uploads. */
+/** "[sz:W,H]" prefix for the caption: one tag per already-encrypted upload, in order. */
 export function captionSizeTag(files: any[]): string {
-  for (const u of files) {
-    const d = descriptorOf(u);
-    const s = (d ? sizes.get(d.uri) : null) ?? sizesByName.get(uploadFileName(u)) ?? null;
-    if (s) return makeSizeTag(s.w, s.h);
-  }
-  return "";
+  return makeSizeTags(
+    files.map((u) => {
+      const d = descriptorOf(u);
+      return (d ? sizes.get(d.uri) : null) ?? sizesByName.get(uploadFileName(u)) ?? null;
+    }),
+  );
 }
 
 /** Encrypts one upload in place; returns the image size for the caption tag, if any. */
@@ -235,7 +235,7 @@ export function encryptAttachments(channelId: string, files: any[]): Promise<boo
 
 /**
  * Encrypts every upload in place, then the caption(s) with the "[sz:W,H]" tag of the first
- * image. Resolves true when it is safe to send; on any failure tells the user and resolves
+ * image (one tag per upload). Resolves true when it is safe to send; on any failure tells the user and resolves
  * false (the caller must then NOT send).
  */
 export async function encryptOutgoing(channelId: string, uploads: any[], captions: any[]): Promise<boolean> {
@@ -252,11 +252,9 @@ export async function encryptOutgoing(channelId: string, uploads: any[], caption
   }
   const seal: Seal = { master: base64Encode(key), preset: getSendPreset(channelId).index, ch: channelId, sender: self };
   try {
-    let tag = "";
-    for (const u of uploads) {
-      const s = await encryptUpload(u, seal);
-      if (s && !tag) tag = makeSizeTag(s.w, s.h);
-    }
+    const found: Array<{ w: number; h: number } | null> = [];
+    for (const u of uploads) found.push(await encryptUpload(u, seal));
+    const tag = makeSizeTags(found);
     for (const holder of captions) {
       if (!holder || typeof holder.content !== "string") continue;
       const out = prepare(channelId, tag + holder.content, true);

@@ -351,15 +351,15 @@ export function approveDecrypt(id: string): boolean {
 }
 
 // ---------------------------------------------------------------- entry points
-export function handleAttachments(m: any, channelId: string | undefined, authorId: string | undefined, tag: { w: number; h: number } | null = null): void {
+export function handleAttachments(m: any, channelId: string | undefined, authorId: string | undefined, tags: Array<{ w: number; h: number }> = []): void {
   if (!attachmentsEnabled(storage.attachmentsExp) || !nativeReady() || !Array.isArray(m.attachments)) return;
   const msgId = m.id != null ? String(m.id) : "";
   const chan = String(m.channel_id ?? channelId ?? "");
   if (msgId) msgAtts.set(msgId, m.attachments.map((a: any) => idOf(a)));
   let ctx: MsgCtx | undefined = msgId ? ctxs.get(msgId) : undefined;
-  let tagUsed = false;
   const limit = autoDecryptBytes();
-  for (const a of m.attachments) {
+  for (let idx = 0; idx < m.attachments.length; idx++) {
+    const a = m.attachments[idx];
     if (!isEncAttachment(a)) continue;
     const orig = originalFileName(String(a.filename));
     const mime = mimeFor(orig);
@@ -378,9 +378,10 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
     if (hit) { apply(a, hit); continue; }
     const wait = ph.get(id);
     if (wait) { applyPh(a, wait); continue; }
-    // The sender's [sz:W,H] tag (first picture/video only) lets Discord reserve the right space
+    // The sender's [sz:W,H] tags (one per attachment, in order) let Discord reserve the right space
     // before the file is downloaded; the decrypted file's real size replaces it afterwards.
-    if (tag && !tagUsed) { a.width = tag.w; a.height = tag.h; tagUsed = true; }
+    const t = tags[idx];
+    if (t && t.w > 0 && t.h > 0) { a.width = t.w; a.height = t.h; }
     if (failed.has(id) || queued.has(id)) continue;
     const keys = getReceiveKeysV2(channelId);
     if (!ctx || !keys.length) continue;
