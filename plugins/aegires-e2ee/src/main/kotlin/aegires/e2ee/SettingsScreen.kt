@@ -32,7 +32,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
  *                settingsupdate(partial)    changes values while it is open (key set, progress text)
  *   here -> JS   settingstake()             {"open":bool,"events":[...]} - JS polls this, like the header button
  *
- * Events: {"t":"set","k":<key>,"v":<bool|string>}  {"t":"setKey","pw":<password>}  {"t":"clearKey"}
+ * Events: {"t":"set","k":<key>,"v":<bool|string>}  {"t":"setPreset","i":<preset index>}
+ *         {"t":"setKey","pw":<password>}  {"t":"clearKey"}
  */
 internal object SettingsScreen {
     private const val BG = 0xFF1E1F22.toInt()
@@ -56,6 +57,10 @@ internal object SettingsScreen {
     private var keyButton: Button? = null
     private var clearButton: Button? = null
     private var passwordField: EditText? = null
+    private var formatTitle: TextView? = null
+    private val presetButtons = ArrayList<PresetButton>()
+
+    private class PresetButton(val index: Int, val label: String, val max: Int, val button: Button)
 
     /** JS polls this. The open flag lets it stop polling when the screen is closed. */
     fun take(): String {
@@ -107,6 +112,7 @@ internal object SettingsScreen {
                     state.put(k, p.get(k))
                 }
                 refreshKeyCard()
+                refreshFormatCard()
             } catch (_: Throwable) {
             }
         }
@@ -145,6 +151,8 @@ internal object SettingsScreen {
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(a, 12f), dp(a, 4f), dp(a, 12f), dp(a, 24f))
         col.addView(keyCard(a))
+        col.addView(formatCard(a))
+        builtinCard(a)?.let { col.addView(it) }
         col.addView(behaviourCard(a))
         col.addView(versionsCard(a))
         val scroll = ScrollView(a)
@@ -197,6 +205,53 @@ internal object SettingsScreen {
         keyButton?.text = if (busy) state.optString("status", "Working...") else "Set global key"
         keyButton?.isEnabled = !busy
         clearButton?.visibility = if (has && !busy) View.VISIBLE else View.GONE
+    }
+
+    private fun formatCard(a: Activity): View {
+        val c = card(a, "")
+        formatTitle = c.getChildAt(0) as TextView
+        c.addView(label(a, "v2 is the current Aegires format: Argon2id keys, a fresh key per message and per file bound to the chat and the sender. Old v1 messages are always still decrypted.", MUTED, 14f, false), top(a, 4f))
+        presetButtons.clear()
+        val presets = state.optJSONArray("presets") ?: JSONArray()
+        for (i in 0 until presets.length()) {
+            val p = presets.getJSONObject(i)
+            val index = p.getInt("index")
+            val b = button(a, "", ACCENT)
+            b.setOnClickListener {
+                state.put("format", "v2").put("preset", index)
+                events.add(JSONObject().put("t", "setPreset").put("i", index).toString())
+                refreshFormatCard()
+            }
+            c.addView(b, top(a, 8f))
+            presetButtons.add(PresetButton(index, p.optString("label"), p.optInt("max"), b))
+        }
+        toggle(a, c, state.optJSONObject("values") ?: JSONObject(), "padme", "Hide message length better (Padmé padding, up to ~12% longer; every v2 client can read it)")
+        refreshFormatCard()
+        return c
+    }
+
+    private fun refreshFormatCard() {
+        val v1 = state.optString("format", "v2") == "v1"
+        val cur = state.optInt("preset", -1)
+        val curLabel = presetButtons.firstOrNull { it.index == cur }?.label ?: ""
+        formatTitle?.text = "Format: " + (if (v1) "v1 (legacy)" else "v2, $curLabel")
+        for (p in presetButtons) {
+            p.button.text = (if (!v1 && p.index == cur) "✔ " else "") + "v2 " + p.label + "  (max " + p.max + " bytes)"
+        }
+    }
+
+    private fun builtinCard(a: Activity): View? {
+        val ids = state.optJSONArray("forced") ?: return null
+        if (ids.length() == 0) return null
+        val c = card(a, "Built-in channels")
+        c.addView(label(a, "Aegires channels with a built-in key: always encrypted with v2 AES-128-GCM, nothing to set up. Anyone with Aegires can read them.", MUTED, 14f, false), top(a, 4f))
+        for (i in 0 until ids.length()) {
+            val t = label(a, ids.getString(i), TEXT, 15f, false)
+            t.setTextIsSelectable(true)
+            t.typeface = Typeface.MONOSPACE
+            c.addView(t, top(a, 6f))
+        }
+        return c
     }
 
     private fun behaviourCard(a: Activity): View {

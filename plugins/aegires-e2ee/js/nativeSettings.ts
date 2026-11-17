@@ -5,15 +5,17 @@ import { nativeReady, nativeSettingsOpen, nativeSettingsTake, nativeSettingsUpda
 import { storage } from "./storage.ts";
 import { diag } from "./diag.ts";
 import { notify } from "./notify.ts";
-import { clearGlobalKey, hasGlobalKey, passwordRule, setGlobalPassword } from "./state.ts";
+import { PRESETS, clearGlobalKey, getPreset, hasGlobalKey, passwordRule, setGlobalPassword, setPreset } from "./state.ts";
+import { maxPlaintextBytes } from "./crypto/v2.ts";
+import { FORCED_CHANNELS } from "./forced.ts";
 import { clearLinkPreviews } from "./patches/embeds.ts";
 import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "./about.ts";
 
 const POLL_MS = 300;
 
 /** The on/off settings the screen may change. "debug" exists in dev builds only. */
-export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", ...(DEV_BUILD ? ["debug"] : [])];
-const DEFAULT_ON = new Set(["inlineVideo", "encButton"]); // a missing value means on
+export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "padme", ...(DEV_BUILD ? ["debug"] : [])];
+const DEFAULT_ON = new Set(["inlineVideo", "encButton", "padme"]); // a missing value means on
 
 const toggleValue = (k: string): boolean => (DEFAULT_ON.has(k) ? storage[k] !== false : !!storage[k]);
 
@@ -25,6 +27,10 @@ export function snapshot(): Record<string, unknown> {
     hasKey: hasGlobalKey(),
     rule: passwordRule(),
     values,
+    format: storage.format === "v1" ? "v1" : "v2",
+    preset: getPreset().index,
+    presets: PRESETS.map((x: any) => ({ index: x.index, label: x.label, max: maxPlaintextBytes(x) })),
+    forced: Object.keys(FORCED_CHANNELS),
     autoMb: Number(storage.autoDecryptMB ?? 25),
     isDev: DEV_BUILD,
     version: PLUGIN_VERSION,
@@ -44,6 +50,12 @@ export async function handleEvent(ev: any): Promise<void> {
       } else if (TOGGLES.includes(ev.k)) {
         storage[ev.k] = ev.v === true;
         if (ev.k === "linkPreviews" && ev.v !== true) clearLinkPreviews();
+      }
+    } else if (ev?.t === "setPreset") {
+      const i = Number(ev.i);
+      if (PRESETS.some((x: any) => x.index === i)) {
+        storage.format = "v2";
+        setPreset(i);
       }
     } else if (ev?.t === "setKey" && typeof ev.pw === "string" && ev.pw) {
       let last = -1;

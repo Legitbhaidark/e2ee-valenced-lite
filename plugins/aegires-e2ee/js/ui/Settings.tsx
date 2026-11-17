@@ -160,7 +160,7 @@ function SettingsInner() {
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
       <EngineHost />
-      <Card title="Settings" hint="The main settings (global key, behaviour, plugin versions) are on the native settings screen.">
+      <Card title="Settings" hint="The main settings (global key, format, behaviour, plugin versions) are on the native settings screen.">
         <Button
           label="Open settings screen"
           onPress={() => {
@@ -186,6 +186,8 @@ function SettingsInner() {
         ) : null}
       </Card>
 
+      {!nativeReady() ? (
+        <>
       <Card
         title={"Format: " + (storage.format === "v1" ? "v1 (legacy)" : "v2, " + getPreset().label)}
         hint="v2 is the current Aegires format: Argon2id keys, a fresh key per message and per file bound to the chat and the sender. Old v1 messages are always still decrypted."
@@ -206,6 +208,8 @@ function SettingsInner() {
             <Text key={id} selectable style={{ color: C.text, marginTop: 6, fontFamily: "monospace" }}>{id}</Text>
           ))}
         </Card>
+      ) : null}
+        </>
       ) : null}
 
       <Card title="Per-chat key / switch" hint="Channel ID is pre-filled with the chat you had open. Leave the password empty to only change on/off.">

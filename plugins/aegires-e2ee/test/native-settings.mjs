@@ -17,7 +17,8 @@ register("data:text/javascript," + encodeURIComponent(hooks), import.meta.url);
 
 const { bindHost, unbindHost } = await import("../js/host.ts");
 const { attachStorage, detachStorage, storage } = await import("../js/storage.ts");
-const { initStorage, hasGlobalKey } = await import("../js/state.ts");
+const { initStorage, hasGlobalKey, PRESETS } = await import("../js/state.ts");
+const { FORCED_CHANNELS } = await import("../js/forced.ts");
 const { startNative } = await import("../js/engine/engine.ts");
 const { snapshot, handleEvent, openNativeSettings, TOGGLES } = await import("../js/nativeSettings.ts");
 const ok = (m) => console.log("  ok  " + m);
@@ -59,6 +60,29 @@ assert.equal(snap.isDev, false);
 assert.ok(!("debug" in snap.values), "no debug switch in a release build");
 assert.match(snap.build, /release$/);
 ok("snapshot: keys, defaults, release build has no debug switch");
+
+// format card: presets, Padmé, built-in channels
+assert.equal(snap.format, "v2");
+assert.deepEqual(snap.presets.map((p) => p.index), PRESETS.map((p) => p.index));
+assert.ok(snap.presets.every((p) => p.label && p.max > 1000), "every preset has a label and a max length");
+assert.equal(snap.values.padme, true, "Padmé padding is on by default");
+assert.deepEqual(snap.forced, Object.keys(FORCED_CHANNELS));
+const other = PRESETS.find((p) => p.index !== snap.preset);
+await handleEvent({ t: "setPreset", i: other.index });
+assert.equal(snapshot().preset, other.index);
+assert.equal(storage.format, "v2");
+storage.format = "v1";
+assert.equal(snapshot().format, "v1", "v1 shows as legacy");
+await handleEvent({ t: "setPreset", i: other.index });
+assert.equal(snapshot().format, "v2", "picking a preset switches back to v2");
+await handleEvent({ t: "setPreset", i: 999 });
+await handleEvent({ t: "setPreset", i: "x" });
+assert.equal(snapshot().preset, other.index, "an unknown preset is ignored");
+await handleEvent({ t: "set", k: "padme", v: false });
+assert.equal(storage.padme, false);
+await handleEvent({ t: "set", k: "padme", v: true });
+assert.equal(snapshot().values.padme, true);
+ok("format card: preset choice, v1 label, Padmé, built-in channels list");
 
 // toggles
 await handleEvent({ t: "set", k: "showLock", v: false });
