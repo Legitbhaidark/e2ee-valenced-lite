@@ -33,6 +33,7 @@ import java.lang.ref.WeakReference
 internal object InlineVideo {
     private const val MIN_DP = 100 // smaller than this is not a picture
     private const val TOUCH_MAX_AGE_MS = 1500L
+    private const val VIEW_BUDGET = 20000 // most views looked at for one tap
 
     private var box: FrameLayout? = null
     private var video: VideoView? = null
@@ -122,8 +123,12 @@ internal object InlineVideo {
         decor.getLocationOnScreen(origin)
         val x = TouchSpy.x - origin[0]
         val y = TouchSpy.y - origin[1]
-        val deepest = deepestAt(decor, x, y)
-        if (deepest == null) {
+        // Every view under the finger, whatever its depth and whatever is drawn on top of it. (A
+        // transparent screen-sized view above the chat used to end the search before it reached
+        // the picture.)
+        val hits = ArrayList<View>()
+        viewsAt(decor, x, y, hits, intArrayOf(VIEW_BUDGET))
+        if (hits.isEmpty()) {
             status = "full screen: no view at " + x.toInt() + "," + y.toInt()
             return null
         }
@@ -131,28 +136,35 @@ internal object InlineVideo {
         val sw = a.resources.displayMetrics.widthPixels
         val sh = a.resources.displayMetrics.heightPixels
         val want = if (vw > 0 && vh > 0) vw.toFloat() / vh else 0f
-        // The views under the finger, from the deepest outwards. The picture is the first one that is
-        // big enough, not screen-sized, and (when the video's shape is known) has about that shape.
-        val chain = ArrayList<String>()
-        var v: View? = deepest
-        var depth = 0
-        while (v != null && depth < 8) {
+        // The picture is the smallest view that is big enough, not screen-sized, and (when the
+        // video's shape is known) has about that shape.
+        var best: View? = null
+        var bestArea = Float.MAX_VALUE
+        var providers = 0
+        val seen = ArrayList<String>()
+        for (v in hits) {
+            val provider = try { v.accessibilityNodeProvider } catch (_: Throwable) { null }
+            if (provider != null) providers++
             val wr = winRect(v)
             val rw = wr.width()
             val rh = wr.height()
-            chain.add(v.javaClass.name + " " + rw.toInt() + "x" + rh.toInt() + (if (v.scaleY < 0f) " flipped" else ""))
             val bigEnough = rw >= min && rh >= min
-            val screenSized = rw * 100 >= sw * 95 && rh * 10 >= sh * 7
-            if (bigEnough && !screenSized) {
-                val ratio = rw / rh
-                val shapeOk = want == 0f || Math.abs(ratio - want) <= want * 0.18f
-                if (shapeOk) return v
+            if (bigEnough && seen.size < 10) {
+                seen.add(v.javaClass.name + " " + rw.toInt() + "x" + rh.toInt() + (if (v.scaleY < 0f) " flipped" else ""))
             }
-            v = v.parent as? View
-            depth++
+            val screenSized = rw * 100 >= sw * 95 && rh * 10 >= sh * 7
+            if (!bigEnough || screenSized) continue
+            val ratio = rw / rh
+            val shapeOk = want == 0f || Math.abs(ratio - want) <= want * 0.18f
+            if (shapeOk && rw * rh < bestArea) {
+                best = v
+                bestArea = rw * rh
+            }
         }
+        if (best != null) return best
         val shape = if (want > 0f) "wanted ratio " + String.format(java.util.Locale.ROOT, "%.2f", want) else "shape unknown"
-        status = "full screen: no view with the picture's shape (" + shape + ") at " + x.toInt() + "," + y.toInt() + ": " + chain.take(5).joinToString("; ") + " [" + deepest.javaClass.superclass?.name + "]"
+        status = "full screen: no picture-shaped view among " + hits.size + " under the finger at " + x.toInt() + "," + y.toInt() +
+            " (" + shape + ", " + providers + " with accessibility nodes): " + seen.joinToString("; ")
         return null
     }
 
@@ -193,17 +205,22 @@ internal object InlineVideo {
         return RectF(l, t, rr, bb)
     }
 
-    /** The deepest visible view under a point (window coordinates); later siblings are drawn on top, so they are tried first. */
-    private fun deepestAt(v: View, x: Float, y: Float): View? {
-        if (v.visibility != View.VISIBLE || v === box) return null
-        if (!winRect(v).contains(x, y)) return null
+    /**
+     * Adds every visible view under a point (window coordinates) to [out], the view itself first and
+     * its children after, last child (drawn on top) first. A view with no size of its own is looked
+     * through anyway, since its children can still be drawn elsewhere.
+     */
+    private fun viewsAt(v: View, x: Float, y: Float, out: ArrayList<View>, budget: IntArray) {
+        if (budget[0] <= 0) return
+        budget[0]--
+        if (v.visibility != View.VISIBLE || v === box) return
+        val r = winRect(v)
+        val has = !r.isEmpty
+        if (has && !r.contains(x, y)) return
+        if (has) out.add(v)
         if (v is ViewGroup) {
-            for (i in v.childCount - 1 downTo 0) {
-                val d = deepestAt(v.getChildAt(i), x, y)
-                if (d != null) return d
-            }
+            for (i in v.childCount - 1 downTo 0) viewsAt(v.getChildAt(i), x, y, out, budget)
         }
-        return v
     }
 
     // ------------------------------------------------------------------ the player view
