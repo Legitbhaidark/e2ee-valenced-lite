@@ -9,7 +9,7 @@
       "author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
       "channels": {
         "latest": "0.1.29",
-        "beta": "0.1.30-dev6",
+        "beta": "0.1.30-dev7",
         "lts": "0.1.27"
       },
       "versions": {
@@ -537,6 +537,19 @@
           "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev6.zip",
           "sha256": "79818d9d9a3f703e3e45c0c3816c13a3cd58d4d0210ae5d23d4c5ddd94ef132f",
           "size": 173698,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.1.30-dev7": {
+          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev7.zip",
+          "sha256": "586cd01f564012187dac4b9f8f2fd68e017220297c8ba5bb2ce5f5ab64ca70d0",
+          "size": 179190,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
