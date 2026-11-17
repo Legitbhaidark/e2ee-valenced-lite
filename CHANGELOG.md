@@ -4,6 +4,10 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.32 - stable
+- The C Argon2id library is now built for all four Android CPU types (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`), so every device gets the native speed.
+- Plugin zips are also kept as downloadable artifacts on every release run.
+
 ## 0.1.32-dev2
 - The C Argon2id library is now also built for 32-bit x86 (`x86`). It ships for `arm64-v8a`, `armeabi-v7a`, `x86_64` and `x86`, so every Android CPU gets the native speed.
 
