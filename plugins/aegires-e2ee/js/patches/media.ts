@@ -33,7 +33,7 @@ const log = (...a: any[]) => { if (storage.debug) console.log("[aegires-e2ee:med
 
 type Kind = "image" | "video" | "audio";
 /** Something the native player can play: the absolute path of the decrypted file and a title for audio. */
-export interface PlayableMedia { path: string; title: string }
+export interface PlayableMedia { path: string; title: string; w?: number; h?: number }
 interface Decrypted { uri: string; name: string; mime: string; size: number; w: number; h: number; kind: Kind; thumb?: string; title: string }
 
 interface Placeholder { state: "tap" | "work"; w: number; h: number; path: string; kind: Kind }
@@ -56,7 +56,7 @@ const thumbs = new Map<string, PlayableMedia>(); // absolute path of a chat pict
 const MEDIA_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp|mp3|m4a|aac|ogg|oga|opus|wav|flac|amr|mka)$/i;
 
 const playable = (d?: Decrypted): PlayableMedia | null =>
-  d && d.kind !== "image" ? { path: d.uri.replace(/^file:\/\//, ""), title: d.title } : null;
+  d && d.kind !== "image" ? { path: d.uri.replace(/^file:\/\//, ""), title: d.title, w: d.w, h: d.h } : null;
 
 /** The decrypted video or audio a tap refers to: by attachment ids, or message id + index. */
 export function decryptedMedia(ids: string[], messageId?: string, index?: number): PlayableMedia | null {
@@ -318,7 +318,7 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
       thumb = thumbPath;
       w = t.w;
       h = t.h;
-      thumbs.set(thumbPath, { path: out, title });
+      thumbs.set(thumbPath, { path: out, title, w, h });
     } catch (e) {
       if (kind === "audio") throw e; // an audio file has no picture of its own to fall back to
       log("no thumbnail for the video", id, e);

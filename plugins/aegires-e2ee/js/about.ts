@@ -3,7 +3,7 @@
 declare const __DEV__: boolean;
 
 export const DEVELOPER = "Dark (system32crowdstrikewin11)";
-export const PLUGIN_VERSION = "0.1.30-dev3";
+export const PLUGIN_VERSION = "0.1.30-dev4";
 export const BUILD_NUMBER = "26110129"; // YYMM + (minor * 100 + patch); shown as text
 
 /**

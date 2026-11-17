@@ -124,7 +124,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 
   // tap routing: the thumbnail uri maps back to the video file
   const hit = mediaForUri("file:///data/cache/aegires/in/111.thumb.jpg?x=1");
-  assert.deepEqual(hit, { path: "/data/cache/aegires/in/111.mp4", title: "Video" });
+  assert.deepEqual(hit, { path: "/data/cache/aegires/in/111.mp4", title: "Video", w: 720, h: 1280 });
   assert.deepEqual(decryptedMedia(["111"]), hit);
   assert.deepEqual(decryptedMedia([], "m1", 0), hit);
   assert.equal(mediaForUri("file:///data/cache/aegires/in/111.mp4").path, "/data/cache/aegires/in/111.mp4");
@@ -164,7 +164,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   const t1 = calls.filter((c) => c.name === "aegires.mediathumb" && c.args[0] === "audio");
   assert.equal(t1.find((c) => c.args[1].endsWith("113.m4a")).args[3], "My Song");
   assert.equal(t1.find((c) => c.args[1].endsWith("114.mp3")).args[3], "Audio");
-  assert.deepEqual(mediaForUri(a.url), { path: "/data/cache/aegires/in/113.m4a", title: "My Song" });
+  assert.deepEqual(mediaForUri(a.url), { path: "/data/cache/aegires/in/113.m4a", title: "My Song", w: 720, h: 216 });
   assert.equal(mediaForUri(b.url).title, "Audio");
   assert.ok(!calls.some((c) => c.name === "aegires.mediainfo" && c.args[0].endsWith("113.m4a")), "no image/video probe for audio");
   ok("decrypted audio: card picture, readable name as title, random names become 'Audio'");

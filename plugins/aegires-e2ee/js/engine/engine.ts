@@ -162,8 +162,19 @@ export async function nativePlayVideo(path: string): Promise<void> {
 }
 
 /** Opens the native full-screen player on a decrypted video or audio file. The title is shown for audio. */
-export async function nativePlayMedia(path: string, title: string, inline = false): Promise<void> {
-  await callNative("playmedia", [path, title, inline ? "inline" : "full"], 5000);
+export async function nativePlayMedia(path: string, title: string, inline = false, w = 0, h = 0): Promise<void> {
+  await callNative("playmedia", [path, title, inline ? "inline" : "full", String(Math.round(w) || 0), String(Math.round(h) || 0)], 5000);
+}
+
+/** What the in-chat player did for the last tap (Diagnostics): "inline" or why it fell back to full screen. */
+export async function nativeInlineStatus(): Promise<string> {
+  const out = await callNative("inlinestatus", [], 3000);
+  return typeof out === "string" ? out : String(out ?? "");
+}
+
+/** Starts noting where the screen is touched (needed to find the picture a video plays on). */
+export async function nativeTouchSpy(): Promise<void> {
+  await callNative("touchspy", [], 3000);
 }
 
 /**
@@ -297,6 +308,7 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
+    void nativeTouchSpy().catch(() => {}); // the UI is up by now, so the window can be wrapped
     diag.argon2Engine = await readArgon2Engine();
     void checkV2();
   } catch (e) {

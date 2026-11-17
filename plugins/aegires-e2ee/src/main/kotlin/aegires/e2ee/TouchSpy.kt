@@ -17,9 +17,16 @@ internal object TouchSpy {
     @Volatile var y = -1f
     @Volatile var at = 0L
     @Volatile private var enabled = false
+    @Volatile private var touches = 0
+    @Volatile private var windows = 0
 
     private var app: Application? = null
     private var callbacks: Application.ActivityLifecycleCallbacks? = null
+
+    /** For Diagnostics. */
+    fun describe(): String =
+        "touch spy " + (if (enabled) "on" else "off") + ", " + windows + " window(s) wrapped, " + touches + " touch(es) seen" +
+            (if (x >= 0f) ", last " + (System.currentTimeMillis() - at) + " ms ago" else "")
 
     /** True when a touch happened in the last [ms] milliseconds. */
     fun recent(ms: Long): Boolean = x >= 0f && System.currentTimeMillis() - at <= ms
@@ -61,7 +68,10 @@ internal object TouchSpy {
             try {
                 val w = a.window ?: return@runOnUiThread
                 val cur = w.callback
-                if (cur != null && cur !is Spy) w.callback = Spy(cur)
+                if (cur != null && cur !is Spy) {
+                    w.callback = Spy(cur)
+                    windows++
+                }
             } catch (_: Throwable) {
             }
         }
@@ -70,6 +80,7 @@ internal object TouchSpy {
     private class Spy(private val base: Window.Callback) : Window.Callback by base {
         override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
             if (enabled && event != null && event.actionMasked == MotionEvent.ACTION_DOWN) {
+                touches++
                 x = event.rawX
                 y = event.rawY
                 at = System.currentTimeMillis()

@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -43,23 +44,35 @@ internal object InlineVideo {
     private var targetH = 0
     private var hiddenSince = 0L
     private var dragging = false
+    private var taps = 0
+    private var lastTapAt = 0L
+    private var pendingToggle: Runnable? = null
 
-    fun start(activity: Activity, filePath: String, fileTitle: String) {
+    /** What happened on the last start: "inline", or why it fell back to the full-screen player. */
+    @Volatile private var status = "no tap yet"
+
+    fun status(): String = status
+
+    /** [vw] x [vh] is the picture's pixel size (0 = unknown); its shape picks the right view. */
+    fun start(activity: Activity, filePath: String, fileTitle: String, vw: Int, vh: Int) {
         runUi(activity) {
             try {
                 close()
                 if (!VideoPlayer.allowed(filePath) || !File(filePath).isFile) {
+                    status = "full screen: file not found"
                     VideoPlayer.show(activity, filePath, fileTitle)
                     return@runUi
                 }
-                val view = pictureAtLastTouch(activity)
+                val view = pictureAtLastTouch(activity, vw, vh)
                 if (view == null) {
                     VideoPlayer.show(activity, filePath, fileTitle)
                     return@runUi
                 }
                 show(activity, view, filePath, fileTitle)
-            } catch (_: Throwable) {
+                status = "inline on " + view.javaClass.simpleName + " " + view.width + "x" + view.height
+            } catch (t: Throwable) {
                 close()
+                status = "full screen: error " + t.javaClass.simpleName + " " + (t.message ?: "").take(60)
                 VideoPlayer.show(activity, filePath, fileTitle)
             }
         }
@@ -68,6 +81,8 @@ internal object InlineVideo {
     fun close() {
         val b = box
         val v = video
+        pendingToggle?.let { b?.removeCallbacks(it) }
+        pendingToggle = null
         box = null
         video = null
         seek = null
@@ -87,21 +102,47 @@ internal object InlineVideo {
 
     private fun dp(a: Activity, v: Float): Int = (v * a.resources.displayMetrics.density + 0.5f).toInt()
 
-    private fun pictureAtLastTouch(a: Activity): View? {
-        if (!TouchSpy.recent(TOUCH_MAX_AGE_MS)) return null
-        val decor = a.window.decorView as? ViewGroup ?: return null
+    private fun pictureAtLastTouch(a: Activity, vw: Int, vh: Int): View? {
+        if (!TouchSpy.recent(TOUCH_MAX_AGE_MS)) {
+            status = "full screen: no recent touch known (" + TouchSpy.describe() + ")"
+            return null
+        }
+        val decor = a.window.decorView as? ViewGroup
+        if (decor == null) {
+            status = "full screen: no window"
+            return null
+        }
         val x = TouchSpy.x.toInt()
         val y = TouchSpy.y.toInt()
-        var hit: View? = deepestAt(decor, x, y) ?: return null
+        val deepest = deepestAt(decor, x, y)
+        if (deepest == null) {
+            status = "full screen: no view at " + x + "," + y
+            return null
+        }
         val min = dp(a, MIN_DP.toFloat())
         val sw = a.resources.displayMetrics.widthPixels
         val sh = a.resources.displayMetrics.heightPixels
-        // Climb from a small hit (an icon inside the picture) up to the first picture-sized view.
-        while (hit != null && (hit.width < min || hit.height < min)) hit = hit.parent as? View
-        val h = hit ?: return null
-        // A view that is nearly the whole screen is a container, not the picture.
-        if (h.width * 100 >= sw * 95 && h.height * 10 >= sh * 7) return null
-        return h
+        val want = if (vw > 0 && vh > 0) vw.toFloat() / vh else 0f
+        // The views under the finger, from the deepest outwards. The picture is the first one that is
+        // big enough, not screen-sized, and (when the video's shape is known) has about that shape.
+        val chain = ArrayList<String>()
+        var v: View? = deepest
+        var depth = 0
+        while (v != null && depth < 8) {
+            chain.add(v.javaClass.simpleName + " " + v.width + "x" + v.height)
+            val bigEnough = v.width >= min && v.height >= min
+            val screenSized = v.width * 100 >= sw * 95 && v.height * 10 >= sh * 7
+            if (bigEnough && !screenSized) {
+                val ratio = v.width.toFloat() / v.height
+                val shapeOk = want == 0f || Math.abs(ratio - want) <= want * 0.18f
+                if (shapeOk) return v
+            }
+            v = v.parent as? View
+            depth++
+        }
+        val shape = if (want > 0f) "wanted ratio " + String.format(java.util.Locale.ROOT, "%.2f", want) else "shape unknown"
+        status = "full screen: no view with the picture's shape (" + shape + "): " + chain.take(5).joinToString("; ")
+        return null
     }
 
     /** The deepest visible view under a screen point; later siblings are drawn on top, so they are tried first. */
@@ -152,8 +193,27 @@ internal object InlineVideo {
             true
         }
         root.addView(vv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
+        // The first tap (the one that started the player) counts too: tap three times quickly for full screen.
+        taps = 1
+        lastTapAt = SystemClock.uptimeMillis()
         root.setOnClickListener {
-            if (vv.isPlaying) vv.pause() else vv.start()
+            val now = SystemClock.uptimeMillis()
+            taps = if (now - lastTapAt <= 600L) taps + 1 else 1
+            lastTapAt = now
+            pendingToggle?.let { root.removeCallbacks(it) }
+            pendingToggle = null
+            if (taps >= 3) {
+                taps = 0
+                val pos = vv.currentPosition
+                val act = host?.get()
+                close()
+                if (act != null) VideoPlayer.show(act, filePath, fileTitle, pos)
+            } else {
+                // A single tap pauses / resumes, but only once it is clear no third tap follows.
+                val toggle = Runnable { if (vv.isPlaying) vv.pause() else vv.start() }
+                pendingToggle = toggle
+                root.postDelayed(toggle, 350L)
+            }
         }
 
         val bar = SeekBar(a)
@@ -172,6 +232,21 @@ internal object InlineVideo {
             }
         })
         root.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 28f), Gravity.BOTTOM))
+
+        // A short hint at the bottom, gone after a few seconds.
+        val hint = TextView(a)
+        hint.text = "Tap 3 times quickly for full screen"
+        hint.setTextColor(Color.WHITE)
+        hint.textSize = 11f
+        hint.setPadding(dp(a, 8f), dp(a, 3f), dp(a, 8f), dp(a, 3f))
+        val hintBg = GradientDrawable()
+        hintBg.cornerRadius = dp(a, 10f).toFloat()
+        hintBg.setColor(0xAA000000.toInt())
+        hint.background = hintBg
+        val hlp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        hlp.bottomMargin = dp(a, 34f)
+        root.addView(hint, hlp)
+        hint.postDelayed({ hint.visibility = View.GONE }, 3500L)
 
         root.addView(pill(a, "✕") { close() }, corner(a, Gravity.TOP or Gravity.END))
         root.addView(
