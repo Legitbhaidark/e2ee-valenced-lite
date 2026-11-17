@@ -170,20 +170,28 @@ await tick(450);
 assert.equal(storage.showLock, false, "the last events are still applied after the screen closes");
 ok("open: the loop applies events and stops after the screen closes");
 
-// close callback: plain close, and "developer tools" request
-const reasons = [];
+// close callback
+let closed = 0;
 isOpen = true;
-assert.equal(await openNativeSettings((r) => reasons.push(r)), "");
+assert.equal(await openNativeSettings(() => closed++), "");
+assert.equal(closed, 0, "not called while the screen is open");
 isOpen = false;
 await tick(450);
-assert.deepEqual(reasons, ["closed"]);
-isOpen = true;
-assert.equal(await openNativeSettings((r) => reasons.push(r)), "");
-queue = [{ t: "tools" }];
-isOpen = false;
-await tick(800); // one poll takes the event, the next sees the screen closed
-assert.deepEqual(reasons, ["closed", "tools"], "the tools request is passed on when the screen closes");
-ok("open: the close callback says whether developer tools were asked for");
+assert.equal(closed, 1, "called once when the screen closes");
+ok("open: the close callback runs when the screen closes");
+
+// a release build ignores every developer event and shows no developer data
+assert.ok(!("dev" in snapshot()), "no developer data in a release build");
+for (const ev of [
+  { t: "dev", a: "set", k: "shortPw", v: true },
+  { t: "dev", a: "set", k: "v1", v: true },
+  { t: "dev", a: "kdfOn", v: true },
+  { t: "dev", a: "engine", v: "js" },
+  { t: "dev", a: "kdfSave", mem: "1", passes: "1" },
+]) await handleEvent(ev);
+assert.ok(!storage.devShortPw && !storage.devKdfOn && storage.format !== "v1", "developer events change nothing in a release build");
+assert.notEqual(storage.devArgonEngine, "js");
+ok("release build: developer events are refused");
 
 await detachStorage();
 unbindHost();

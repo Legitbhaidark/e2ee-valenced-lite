@@ -33,22 +33,22 @@ import java.util.concurrent.ConcurrentLinkedQueue
  *   here -> JS   settingstake()             {"open":bool,"events":[...]} - JS polls this, like the header button
  *
  * Events: {"t":"set","k":<key>,"v":<bool|string>}  {"t":"setPreset","i":<preset index>}
- *         {"t":"setKey","pw":<password>}  {"t":"clearKey"}  {"t":"tools"} (dev builds: closes, JS shows the older screen)
+ *         {"t":"setKey","pw":<password>}  {"t":"clearKey"}  {"t":"dev",...} (dev builds: see DevScreen)
  *         {"t":"saveChat","id":<channel>,"pw":<optional>}  {"t":"chatEnabled","id":..,"v":bool}  {"t":"removeChat","id":..}
  */
 internal object SettingsScreen {
-    private const val BG = 0xFF1E1F22.toInt()
-    private const val CARD = 0xFF2B2D31.toInt()
-    private const val INPUT = 0xFF383A40.toInt()
-    private const val TEXT = 0xFFDBDEE1.toInt()
-    private const val MUTED = 0xFF949BA4.toInt()
-    private const val ACCENT = 0xFF5865F2.toInt()
-    private const val DANGER = 0xFFDA373C.toInt()
+    internal const val BG = 0xFF1E1F22.toInt()
+    internal const val CARD = 0xFF2B2D31.toInt()
+    internal const val INPUT = 0xFF383A40.toInt()
+    internal const val TEXT = 0xFFDBDEE1.toInt()
+    internal const val MUTED = 0xFF949BA4.toInt()
+    internal const val ACCENT = 0xFF5865F2.toInt()
+    internal const val DANGER = 0xFFDA373C.toInt()
 
-    private val events = ConcurrentLinkedQueue<String>()
+    internal val events = ConcurrentLinkedQueue<String>()
     private var dialog: Dialog? = null
     private var activity: Activity? = null
-    private var state = JSONObject()
+    internal var state = JSONObject()
 
     @Volatile
     private var open = false
@@ -89,6 +89,7 @@ internal object SettingsScreen {
                 d.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
                 d.setOnDismissListener {
                     if (dialog === d) {
+                        DevScreen.close()
                         dialog = null
                         activity = null
                         open = false
@@ -119,12 +120,14 @@ internal object SettingsScreen {
                 refreshKeyCard()
                 refreshFormatCard()
                 refreshChatCard()
+                DevScreen.refresh()
             } catch (_: Throwable) {
             }
         }
     }
 
     fun close() {
+        DevScreen.close()
         try {
             dialog?.dismiss()
         } catch (_: Throwable) {
@@ -161,7 +164,7 @@ internal object SettingsScreen {
         builtinCard(a)?.let { col.addView(it) }
         col.addView(behaviourCard(a))
         col.addView(chatCard(a))
-        if (state.optBoolean("isDev", false)) col.addView(toolsCard(a, d))
+        if (state.optBoolean("isDev", false)) col.addView(toolsCard(a))
         col.addView(versionsCard(a))
         val scroll = ScrollView(a)
         scroll.addView(col)
@@ -383,14 +386,11 @@ internal object SettingsScreen {
         }
     }
 
-    private fun toolsCard(a: Activity, d: Dialog): View {
+    private fun toolsCard(a: Activity): View {
         val c = card(a, "Developer tools")
-        c.addView(label(a, "Diagnostics, self-test, crypto benchmark and developer options are still on the older screen (dev builds only).", MUTED, 14f, false), top(a, 4f))
+        c.addView(label(a, "Diagnostics, self-test, crypto benchmark and developer options (dev builds only).", MUTED, 14f, false), top(a, 4f))
         val b = button(a, "Open developer tools", ACCENT)
-        b.setOnClickListener {
-            events.add(JSONObject().put("t", "tools").toString())
-            d.dismiss()
-        }
+        b.setOnClickListener { DevScreen.show(a) }
         c.addView(b, top(a, 10f))
         return c
     }
@@ -426,7 +426,7 @@ internal object SettingsScreen {
         parent.addView(row, top(a, 10f))
     }
 
-    private fun card(a: Activity, title: String): LinearLayout {
+    internal fun card(a: Activity, title: String): LinearLayout {
         val l = LinearLayout(a)
         l.orientation = LinearLayout.VERTICAL
         val bg = GradientDrawable()
@@ -441,7 +441,7 @@ internal object SettingsScreen {
         return l
     }
 
-    private fun label(a: Activity, text: String, color: Int, size: Float, bold: Boolean): TextView {
+    internal fun label(a: Activity, text: String, color: Int, size: Float, bold: Boolean): TextView {
         val t = TextView(a)
         t.text = text
         t.setTextColor(color)
@@ -450,7 +450,7 @@ internal object SettingsScreen {
         return t
     }
 
-    private fun button(a: Activity, text: String, color: Int): Button {
+    internal fun button(a: Activity, text: String, color: Int): Button {
         val b = Button(a)
         b.text = text
         b.setAllCaps(false)
@@ -462,11 +462,11 @@ internal object SettingsScreen {
         return b
     }
 
-    private fun top(a: Activity, margin: Float): LinearLayout.LayoutParams {
+    internal fun top(a: Activity, margin: Float): LinearLayout.LayoutParams {
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         lp.topMargin = dp(a, margin)
         return lp
     }
 
-    private fun dp(a: Activity, v: Float): Int = (v * a.resources.displayMetrics.density + 0.5f).toInt()
+    internal fun dp(a: Activity, v: Float): Int = (v * a.resources.displayMetrics.density + 0.5f).toInt()
 }
