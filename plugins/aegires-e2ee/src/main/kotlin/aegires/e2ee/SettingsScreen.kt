@@ -144,7 +144,6 @@ internal object SettingsScreen {
         val col = LinearLayout(a)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(a, 12f), dp(a, 4f), dp(a, 12f), dp(a, 24f))
-        col.addView(howToCard(a))
         col.addView(keyCard(a))
         col.addView(behaviourCard(a))
         col.addView(versionsCard(a))
@@ -152,22 +151,6 @@ internal object SettingsScreen {
         scroll.addView(col)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
-    }
-
-    private fun howToCard(a: Activity): View {
-        val c = card(a, "How to use")
-        c.addView(label(a, "1. Set the shared password", TEXT, 15f, true), top(a, 8f))
-        c.addView(label(a, "Type it in \"Global key\" below and press Set global key. Everyone in the chat needs the SAME password; Aegires app users type it in the app. Only the derived keys are stored, never the password.", MUTED, 14f, false), top(a, 2f))
-        c.addView(label(a, "2. Turn encryption on in a chat", TEXT, 15f, true), top(a, 10f))
-        c.addView(label(a, "Use the E2EE button next to the search icon, or send a command as a normal message (it is never sent to Discord):", MUTED, 14f, false), top(a, 2f))
-        val cmd = label(a, "/e2ee on      encrypt this chat\n/e2ee off     send plain text again\n/e2ee status  is it on here?", TEXT, 13f, false)
-        cmd.typeface = Typeface.MONOSPACE
-        cmd.setTextIsSelectable(true)
-        c.addView(cmd, top(a, 4f))
-        c.addView(label(a, "You can also type / and pick \"e2ee\" from Discord's command list, or use a backslash: \\e2ee on.", MUTED, 14f, false), top(a, 4f))
-        c.addView(label(a, "3. Chat normally", TEXT, 15f, true), top(a, 10f))
-        c.addView(label(a, "Your messages go out encrypted (a § and random text). Messages from others are decrypted for you, with a lock next to the time. Images, GIFs, videos and audio work too: tap a decrypted video to play it. Turn on \"Attachments\" in Behaviour to encrypt files you send.", MUTED, 14f, false), top(a, 2f))
-        return c
     }
 
     private fun keyCard(a: Activity): View {
