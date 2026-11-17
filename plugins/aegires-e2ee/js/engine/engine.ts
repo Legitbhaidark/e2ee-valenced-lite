@@ -162,8 +162,8 @@ export async function nativePlayVideo(path: string): Promise<void> {
 }
 
 /** Opens the native full-screen player on a decrypted video or audio file. The title is shown for audio. */
-export async function nativePlayMedia(path: string, title: string): Promise<void> {
-  await callNative("playmedia", [path, title], 5000);
+export async function nativePlayMedia(path: string, title: string, inline = false): Promise<void> {
+  await callNative("playmedia", [path, title, inline ? "inline" : "full"], 5000);
 }
 
 /**

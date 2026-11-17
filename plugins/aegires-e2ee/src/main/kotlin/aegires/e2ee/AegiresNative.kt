@@ -218,10 +218,16 @@ val aegiresNative = plugin {
             val args = rawArgs.asDelegate()
             val path: String by args.string()
             val title: String by args.string()
+            val mode: String by args.string() // "inline" = play in the chat (video only), anything else = full screen
             if (!VideoPlayer.allowed(path)) throw IllegalArgumentException("path not allowed")
-            withAppActivity { VideoPlayer.show(it, path, title) }
+            withAppActivity {
+                if (mode == "inline" && !VideoPlayer.isAudio(path)) InlineVideo.start(it, path, title) else VideoPlayer.show(it, path, title)
+            }
             "ok"
         }
+
+        // The spot of the last touch is needed to find the picture a video plays on.
+        withAppActivity { TouchSpy.install(it) }
 
         // The "E2EE" on/off button next to the search icon. State: on | off | locked | hide. Returns "ok".
         registerNativeMethod("aegires.encbutton") { rawArgs ->
@@ -256,6 +262,8 @@ val aegiresNative = plugin {
 
     stop {
         VideoPlayer.close()
+        InlineVideo.close()
+        TouchSpy.shutdown()
         EncryptButton.shutdown()
         log.i("Aegires native crypto unloaded")
     }

@@ -10,6 +10,7 @@ import { instead, whenFns } from "../patch.ts";
 import { reactModule } from "../host.ts";
 import { approveDecrypt, decryptedMedia, mediaForUri, placeholderIdFor, placeholderIdForUri, type PlayableMedia } from "./media.ts";
 import { nativePlayMedia, nativeReady } from "../engine/engine.ts";
+import { storage } from "../storage.ts";
 import { diag } from "../diag.ts";
 
 
@@ -98,7 +99,8 @@ function mediaForTap(ne: any): PlayableMedia | null {
 
 function play(m: PlayableMedia): boolean {
   if (!nativeReady()) { note("native module not ready - Discord's viewer used"); return false; }
-  nativePlayMedia(m.path, m.title).then(
+  // Videos play in the chat (on their own picture) unless that is switched off; audio always uses the full player.
+  nativePlayMedia(m.path, m.title, storage.inlineVideo !== false).then(
     () => note("opened " + m.path.slice(m.path.lastIndexOf("/") + 1)),
     (e) => note("player failed: " + String((e as any)?.message ?? e).slice(0, 80)),
   );
