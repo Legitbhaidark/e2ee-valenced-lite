@@ -4,6 +4,12 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.32-dev2
+- The C Argon2id library is now also built for 32-bit x86 (`x86`). It ships for `arm64-v8a`, `armeabi-v7a`, `x86_64` and `x86`, so every Android CPU gets the native speed.
+
+## 0.1.32-dev1
+- Every release run (and every pull request build) also uploads the plugin zips as a workflow artifact, so a zip can be downloaded from the Actions run page without a Release.
+
 ## 0.1.31 - stable
 - Dropped the v1 message format completely. v1 messages are no longer read or sent; stored v1 keys are deleted on start.
 - Setting a key is faster (no PBKDF2 step any more).
