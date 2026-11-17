@@ -34,8 +34,9 @@ Every publish also creates a GitHub Release `aegires-e2ee@<version>` with the in
 
 - `dev` builds (`0.1.30-dev19`) become **pre-releases**, notes = the commits since the previous dev build.
 - `main` builds (`0.1.30`) become the **latest** release, notes = the commits since the previous stable release.
-- To write the stable notes by hand, add `release-notes/0.1.30.md` before merging to `main`. It is used as
-  written; the install lines are appended automatically.
+- Notes come from `CHANGELOG.md`: add a `## <version>` section (e.g. `## 0.1.31-dev3`) in the same commit
+  that bumps the version. No section means the commit list is used instead. `release-notes/<version>.md`,
+  if present, wins over both. The install lines are appended automatically.
 
 ## Channels
 

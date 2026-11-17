@@ -4,8 +4,10 @@
 #   dev branch  (versions like 1.2.3-dev4)  -> pre-release
 #   main branch (plain versions like 1.2.3) -> stable release, marked "latest"
 #
-# Release notes: if release-notes/<version>.md exists in the repo it is used as written; otherwise the
-# notes list the commits since the previous release of the same channel.
+# Release notes, first match wins:
+#   1. release-notes/<version>.md, used as written
+#   2. the "## <version>" section of CHANGELOG.md
+#   3. the commits since the previous release of the same channel
 
 set -euo pipefail
 # shellcheck source=.github/scripts/lib.sh
@@ -32,13 +34,32 @@ commit_list() {
         grep -Ev '^- *$|^- *stable$' | head -n 60 || true
 }
 
+# Body of the "## <version>" section in CHANGELOG.md (heading line excluded, blank edges trimmed).
+changelog_section() {
+    [ -f CHANGELOG.md ] || return 0
+    awk -v v="$1" '/^## /{f=($2==v); next} f' CHANGELOG.md |
+        sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' | sed '/./,$!d'
+}
+
 write_notes() {
     local id="$1" version="$2" tag="$3" stable="$4" out="$5"
-    local custom="release-notes/${version}.md" prev
+    local custom="release-notes/${version}.md" prev section
+    section="$(changelog_section "$version")"
 
     {
         if [ -f "$custom" ]; then
             cat "$custom"
+        elif [ -n "$section" ]; then
+            if [ "$stable" = "1" ]; then
+                echo "## ${id} ${version}"
+            else
+                echo "## ${id} ${version} (pre-release)"
+                echo
+                echo "Development build from the \`dev\` branch. Expect rough edges."
+            fi
+            echo
+            echo "### What's new"
+            printf '%s\n' "$section"
         else
             if [ "$stable" = "1" ]; then
                 echo "## ${id} ${version}"
