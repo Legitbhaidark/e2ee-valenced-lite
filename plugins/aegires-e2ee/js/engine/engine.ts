@@ -2,9 +2,9 @@
 // Valenced's native bridge. Right now it does one job: Argon2id, the slow step that turns your
 // password into a key (64 MiB of memory work, done once per password and then cached).
 //
-// If the native half is not installed, fails its self-check, or errors, everything silently
-// falls back to the plain JS Argon2id (same bytes, just slower). The WebView engine of the Kettu
-// version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
+// There is no JS Argon2id any more: if the native half is not installed, fails its self-check or
+// errors, deriving a key fails with a clear message (stored keys keep working). The WebView engine
+// of the Kettu version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
 import { unscoped } from "../host.ts";
 import { getArgonEngine, setArgon2Offload } from "../crypto/kdf2.ts";
 import { base64Decode, base64Encode } from "../crypto/base64.ts";
@@ -69,7 +69,7 @@ export async function nativeCryptoBench(memMiB: number, js: string[]): Promise<s
   return out;
 }
 
-/** Real-size offload: records success or the exact failure in Diagnostics, then lets the JS code take over on failure. */
+/** Real-size derivation: records success or the exact failure in Diagnostics. */
 async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: number, mKiB: number, len: number): Promise<Uint8Array | null> {
   try {
     const out = await nativeArgon2(password, salt, t, mKiB, len);
@@ -80,7 +80,7 @@ async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: nu
   } catch (e) {
     diag.engineFallbacks++;
     diag.engineLastError = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
-    diag.installed["native crypto"] = "FAILED at real size, JS used (" + diag.engineLastError + ")";
+    diag.installed["native crypto"] = "FAILED at real size (" + diag.engineLastError + ")";
     return null;
   }
 }
@@ -317,9 +317,9 @@ export async function startNative(): Promise<boolean> {
     // First line only (a native failure carries a whole Java stack trace), long enough to name the exception.
     why = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
   }
-  diag.engine = nativeOk ? "native (" + diag.argon2Engine + ")" : "not in this build (JS crypto only)";
-  setArgon2Offload(nativeOk ? nativeArgon2Tracked : null);
-  diag.installed["native crypto"] = nativeOk ? "ok (Argon2id: " + diag.argon2Engine + ", self-checked)" : "not used - JS crypto (" + why + ")";
+  diag.engine = nativeOk ? "native (" + diag.argon2Engine + ")" : "native unavailable (no Argon2id)";
+  setArgon2Offload(nativeOk ? nativeArgon2Tracked : null, why);
+  diag.installed["native crypto"] = nativeOk ? "ok (Argon2id: " + diag.argon2Engine + ", self-checked)" : "UNAVAILABLE - keys cannot be derived (" + why + ")";
   return nativeOk;
 }
 

@@ -186,11 +186,11 @@ for (const ev of [
   { t: "dev", a: "set", k: "shortPw", v: true },
   { t: "dev", a: "set", k: "v1", v: true },
   { t: "dev", a: "kdfOn", v: true },
-  { t: "dev", a: "engine", v: "js" },
+  { t: "dev", a: "engine", v: "java" },
   { t: "dev", a: "kdfSave", mem: "1", passes: "1" },
 ]) await handleEvent(ev);
 assert.ok(!storage.devShortPw && !storage.devKdfOn && storage.format !== "v1", "developer events change nothing in a release build");
-assert.notEqual(storage.devArgonEngine, "js");
+assert.notEqual(storage.devArgonEngine, "java");
 ok("release build: developer events are refused");
 
 await detachStorage();

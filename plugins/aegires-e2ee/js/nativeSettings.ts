@@ -182,7 +182,7 @@ async function handleDev(ev: any): Promise<void> {
       await update({ devLines: [] });
       const jobs = diag.engineJobs;
       const ms = await measureKdf(progress);
-      const how = diag.engineJobs > jobs ? "natively - " + (diag.argon2Engine || "Kotlin") : "in plain JS - native: " + (diag.installed["native crypto"] ?? "not started") + (diag.engineLastError ? ", last error: " + diag.engineLastError : "");
+      const how = diag.engineJobs > jobs ? "natively - " + (diag.argon2Engine || "Kotlin") : "FAILED - native: " + (diag.installed["native crypto"] ?? "not started") + (diag.engineLastError ? ", last error: " + diag.engineLastError : "");
       const o = getKdfOverride();
       await update({ devLines: [`Argon2id ${o ? o.mKiB / 1024 + " MiB (custom), " + o.t + " passes" : "64 MiB"} took ${fmtMs(ms)} on this phone, ${how}`] });
     });
@@ -197,7 +197,7 @@ async function handleDev(ev: any): Promise<void> {
     if (ev.k === "v1") storage.format = ev.v === true ? "v1" : "v2";
     else storage.devShortPw = ev.v === true;
     await update({ format: storage.format === "v1" ? "v1" : "v2", dev: devSnapshot() });
-  } else if (a === "engine" && ["auto", "c", "java", "js"].includes(ev.v)) {
+  } else if (a === "engine" && ["auto", "c", "java"].includes(ev.v)) {
     storage.devArgonEngine = ev.v;
     applyDevKdf();
     await update({ dev: devSnapshot() });

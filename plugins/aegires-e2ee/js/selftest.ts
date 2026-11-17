@@ -27,7 +27,7 @@ export async function runSelfTest(): Promise<{ ok: boolean; lines: string[] }> {
 
   const rng = hasSecureRandom();
   check(rng, "secure random (crypto.getRandomValues) available");
-  check(typeof (globalThis as any).BigInt === "function", "BigInt available (needed for Argon2id)");
+  check(typeof (globalThis as any).BigInt === "function", "BigInt available");
 
   // ---- v1
   for (const v of VECTORS_V1) {
@@ -134,12 +134,7 @@ export async function benchCrypto(
     let argon = off, hkdfLeg = off, aes = off;
     if (includeJs) {
       lines(["Running the plain JS tests (slow)..."]);
-      argon = await jsLeg(async () => {
-        const { argon2id } = await import("./crypto/argon2.ts");
-        const t0 = nowMs();
-        const key = await argon2id(enc("benchmark-password"), enc("dcenc2|bench|v1"), { t: 3, m: memMiB * 1024, dkLen: 32, onProgress });
-        return { ms: nowMs() - t0, head: hexOf(key) };
-      });
+      argon = ["-1", "", "JS Argon2id was removed"];
       hkdfLeg = await jsLeg(async () => {
         const { hkdf } = await import("@noble/hashes/hkdf");
         const { sha256 } = await import("@noble/hashes/sha256");

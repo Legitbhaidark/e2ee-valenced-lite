@@ -27,7 +27,7 @@ import org.json.JSONObject
  * and the JS side runs the actions (they need the JS crypto and storage) and pushes the results back.
  *
  * Events: {"t":"dev","a":"diag"|"selftest"|"measure"}  {"a":"bench","mib":<1|8|32|64>,"js":bool}
- *         {"a":"set","k":"v1"|"shortPw","v":bool}  {"a":"engine","v":"auto"|"c"|"java"|"js"}
+ *         {"a":"set","k":"v1"|"shortPw","v":bool}  {"a":"engine","v":"auto"|"c"|"java"}
  *         {"a":"kdfOn","v":bool}  {"a":"kdfSave","mem":<text>,"passes":<text>}
  * State it reads: dev{diagText,v1,shortPw,engine,kdfOn,kdfMem,kdfPasses,maxMem,maxPasses}, devBusy,
  * devLines (self-test / measure result), devBench (benchmark result).
@@ -50,7 +50,7 @@ internal object DevScreen {
     private var v1Switch: Switch? = null
     private var shortSwitch: Switch? = null
     private var kdfSwitch: Switch? = null
-    private val engines = listOf("auto", "c", "java", "js")
+    private val engines = listOf("auto", "c", "java")
     private val engineButtons = ArrayList<Button>()
     private var memField: EditText? = null
     private var passesField: EditText? = null
@@ -221,8 +221,8 @@ internal object DevScreen {
         }
 
         c.addView(S.label(a, "Argon2id engine", S.TEXT, 15f, true), S.top(a, 14f))
-        c.addView(S.label(a, "Which code derives your key. Auto uses the C library, then Kotlin/Java, then plain JS. A fixed engine that is not available falls back to plain JS (see Diagnostics). All engines give the same key.", S.MUTED, 14f, false), S.top(a, 4f))
-        c.addView(chips(a, listOf("Auto", "C library", "Kotlin/Java", "Plain JS"), engineButtons) { i ->
+        c.addView(S.label(a, "Which code derives your key. Auto uses the C library, then Kotlin/Java. A fixed engine that is not available makes key derivation fail (see Diagnostics). All engines give the same key.", S.MUTED, 14f, false), S.top(a, 4f))
+        c.addView(chips(a, listOf("Auto", "C library", "Kotlin/Java"), engineButtons) { i ->
             send(event("engine").put("v", engines[i]))
         }, S.top(a, 8f))
 

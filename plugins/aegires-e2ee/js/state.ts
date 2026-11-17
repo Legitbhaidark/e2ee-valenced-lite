@@ -33,7 +33,7 @@ export function initStorage(): void {
   storage.devKdfOn ??= false; // developer option: custom Argon2id passes / memory (keys no longer match other clients)
   storage.devKdfMemMiB ??= 64;
   storage.devKdfPasses ??= 3;
-  storage.devArgonEngine ??= "auto"; // developer option: auto | c | java | js
+  storage.devArgonEngine ??= "auto"; // developer option: auto | c | java
   if (storage.format === "v1" && !storage.devMode) storage.format = "v2"; // v1 is behind developer options
   storage.preset ??= AES256.index;
   storage.padme ??= true;
@@ -67,7 +67,7 @@ export function applyDevKdf(): void {
   const valid = mem >= 1 && mem <= MAX_KDF_MIB && t >= 1 && t <= MAX_KDF_PASSES;
   setKdfOverride(on && storage.devKdfOn && valid ? { t, mKiB: mem * 1024 } : null);
   const e = String(storage.devArgonEngine);
-  setArgonEngine(on && (e === "c" || e === "java" || e === "js") ? (e as ArgonEngine) : "auto");
+  setArgonEngine(on && (e === "c" || e === "java") ? (e as ArgonEngine) : "auto");
 }
 
 /** Shown in front of the time of decrypted messages (or, if that hook fails, in front of the text). */
