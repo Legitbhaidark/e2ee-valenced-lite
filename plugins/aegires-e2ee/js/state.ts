@@ -43,6 +43,7 @@ export function initStorage(): void {
   storage.attachmentsExp ??= false; // experimental encrypted attachments, opt-in
   storage.autoDecryptMB ??= 25; // encrypted files above this size (MB) show "Tap to decrypt"; 0 = always ask
   storage.linkPreviews ??= false; // link previews for decrypted messages: this phone contacts the linked site, so opt-in
+  storage.gifDryRun ??= false; // developer option: test the GIF download + encrypt pipeline when a GIF link is sent
   storage.inlineVideo ??= true; // play videos in the chat instead of full screen
   storage.encButton ??= true; // the "E2EE" on/off button next to the search icon
   storage.debug ??= false;
@@ -51,6 +52,7 @@ export function initStorage(): void {
     storage.devShortPw = false;
     storage.devKdfOn = false;
     storage.devArgonEngine = "auto";
+    storage.gifDryRun = false;
     storage.debug = false;
   }
   applyDevKdf();

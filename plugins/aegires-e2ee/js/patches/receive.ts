@@ -21,6 +21,8 @@ import { notify } from "../notify.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
 import { encryptAttachments } from "../outgoing.ts";
 import { clearMedia, handleAttachments } from "./media.ts";
+import { DEV_BUILD } from "../about.ts";
+import { shapeOf } from "./gif.ts";
 import { clearLinkPreviews, handleLinkPreviews } from "./embeds.ts";
 import { diag } from "../diag.ts";
 
@@ -150,6 +152,7 @@ function interceptAttach(event: any, type: string): boolean {
   }
   diag.installed["attach event"] = `${type} keys=${Object.keys(event).join(",")}`.slice(0, 140);
   const files = [event.files, event.uploads, event.items, event.attachments].find((x) => Array.isArray(x) && x.length);
+  if (DEV_BUILD && files) diag.installed["attach file shape"] = shapeOf(files[0]);
   if (!files) {
     notify("Unknown attachment format, so it cannot be encrypted - file not attached. Turn encryption off for this chat to send it unencrypted, and report this.");
     return true;

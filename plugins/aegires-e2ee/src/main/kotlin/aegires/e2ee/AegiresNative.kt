@@ -266,6 +266,17 @@ val aegiresNative = plugin {
             LinkPreview.fetch(url)
         }
 
+        // Downloads the media behind a Tenor / Giphy / direct media link into outBase + extension (the
+        // extension comes from the file type). Returns JSON {path, mime, size, url, how, found, ms}.
+        registerNativeAsyncMethod("aegires.fetchmedia") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val url: String by args.string()
+            val outBase: String by args.string()
+            val maxBytes: String by args.string()
+            if (!outBase.contains("/aegires/")) throw IllegalArgumentException("path not allowed")
+            MediaFetch.fetch(url, outBase, maxBytes.toLong())
+        }
+
         // Full-screen playback of a decrypted video file (path under .../aegires/). Returns "ok".
         registerNativeMethod("aegires.playvideo") { rawArgs ->
             val args = rawArgs.asDelegate()
