@@ -33,6 +33,7 @@ import java.lang.ref.WeakReference
 internal object InlineVideo {
     private const val MIN_DP = 100 // smaller than this is not a picture
     private const val TOUCH_MAX_AGE_MS = 1500L
+    private const val CONTROLS_MS = 2000L // the controls hide themselves after this long
     private const val VIEW_BUDGET = 20000 // most views looked at for one tap
 
     private var box: FrameLayout? = null
@@ -64,6 +65,7 @@ internal object InlineVideo {
     fun start(activity: Activity, filePath: String, fileTitle: String, vw: Int, vh: Int) {
         runUi(activity) {
             try {
+                InlineAudio.close()
                 close()
                 if (!VideoPlayer.allowed(filePath) || !File(filePath).isFile) {
                     status = "full screen: file not found"
@@ -107,9 +109,10 @@ internal object InlineVideo {
 
     // ------------------------------------------------------------------ finding the picture
 
-    private fun dp(a: Activity, v: Float): Int = (v * a.resources.displayMetrics.density + 0.5f).toInt()
+    internal fun dp(a: Activity, v: Float): Int = (v * a.resources.displayMetrics.density + 0.5f).toInt()
 
-    private fun pictureAtLastTouch(a: Activity, vw: Int, vh: Int): View? {
+    /** [minDp]: the smallest side a picture can have (an audio card is much flatter than a video). */
+    internal fun pictureAtLastTouch(a: Activity, vw: Int, vh: Int, minDp: Int = MIN_DP): View? {
         if (!TouchSpy.recent(TOUCH_MAX_AGE_MS)) {
             status = "full screen: no recent touch known (" + TouchSpy.describe() + ")"
             return null
@@ -132,7 +135,7 @@ internal object InlineVideo {
             status = "full screen: no view at " + x.toInt() + "," + y.toInt()
             return null
         }
-        val min = dp(a, MIN_DP.toFloat())
+        val min = dp(a, minDp.toFloat())
         val sw = a.resources.displayMetrics.widthPixels
         val sh = a.resources.displayMetrics.heightPixels
         val want = if (vw > 0 && vh > 0) vw.toFloat() / vh else 0f
@@ -173,7 +176,7 @@ internal object InlineVideo {
      * row's "top" and "left + width" no longer describe where it is drawn; the corners are pushed
      * through every ancestor's matrix instead.
      */
-    private fun winRect(v: View): RectF {
+    internal fun winRect(v: View): RectF {
         val pts = floatArrayOf(0f, 0f, v.width.toFloat(), 0f, v.width.toFloat(), v.height.toFloat(), 0f, v.height.toFloat())
         var cur: View = v
         var depth = 0
@@ -213,7 +216,7 @@ internal object InlineVideo {
     private fun viewsAt(v: View, x: Float, y: Float, out: ArrayList<View>, budget: IntArray) {
         if (budget[0] <= 0) return
         budget[0]--
-        if (v.visibility != View.VISIBLE || v === box) return
+        if (v.visibility != View.VISIBLE || v === box || InlineAudio.owns(v)) return
         val r = winRect(v)
         val has = !r.isEmpty
         if (has && !r.contains(x, y)) return
@@ -256,7 +259,20 @@ internal object InlineVideo {
             true
         }
         root.addView(vv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
-        // The first tap (the one that started the player) counts too: tap three times quickly for full screen.
+        // Everything the user can press lives in one layer ("ctl") that hides itself 2 seconds after it
+        // appears. One tap on the video shows it again (or hides it at once); three quick taps go to
+        // full screen. The first tap (the one that started the player) counts as the first of three.
+        val ctl = FrameLayout(a)
+        val hint = TextView(a)
+        val hideCtl = Runnable {
+            ctl.visibility = View.GONE
+            hint.visibility = View.GONE // the hint is only for the first time
+        }
+        val showCtl = {
+            ctl.visibility = View.VISIBLE
+            ctl.removeCallbacks(hideCtl)
+            ctl.postDelayed(hideCtl, CONTROLS_MS)
+        }
         taps = 1
         lastTapAt = SystemClock.uptimeMillis()
         root.setOnClickListener {
@@ -272,12 +288,20 @@ internal object InlineVideo {
                 close()
                 if (act != null) VideoPlayer.show(act, filePath, fileTitle, pos)
             } else {
-                // A single tap pauses / resumes, but only once it is clear no third tap follows.
-                val toggle = Runnable { if (vv.isPlaying) vv.pause() else vv.start() }
+                // One tap shows or hides the controls, but only once it is clear no third tap follows.
+                val toggle = Runnable {
+                    if (ctl.visibility == View.VISIBLE) {
+                        ctl.removeCallbacks(hideCtl)
+                        hideCtl.run()
+                    } else {
+                        showCtl()
+                    }
+                }
                 pendingToggle = toggle
                 root.postDelayed(toggle, 350L)
             }
         }
+        root.addView(ctl, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         val bar = SeekBar(a)
         bar.setPadding(dp(a, 6f), 0, dp(a, 6f), 0)
@@ -288,16 +312,16 @@ internal object InlineVideo {
 
             override fun onStartTrackingTouch(s: SeekBar?) {
                 dragging = true
+                ctl.removeCallbacks(hideCtl) // stay while the finger is on the bar
             }
 
             override fun onStopTrackingTouch(s: SeekBar?) {
                 dragging = false
+                showCtl()
             }
         })
-        root.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 28f), Gravity.BOTTOM))
+        ctl.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 28f), Gravity.BOTTOM))
 
-        // A short hint at the bottom, gone after a few seconds.
-        val hint = TextView(a)
         hint.text = "Tap 3 times quickly for full screen"
         hint.setTextColor(Color.WHITE)
         hint.textSize = 11f
@@ -308,12 +332,11 @@ internal object InlineVideo {
         hint.background = hintBg
         val hlp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
         hlp.bottomMargin = dp(a, 34f)
-        root.addView(hint, hlp)
-        hint.postDelayed({ hint.visibility = View.GONE }, 3500L)
+        ctl.addView(hint, hlp)
 
-        root.addView(pill(a, "✕") { close() }, corner(a, Gravity.TOP or Gravity.END))
-        root.addView(
-            pill(a, "⛶") {
+        ctl.addView(pill(a, "\u2715") { close() }, corner(a, Gravity.TOP or Gravity.END))
+        ctl.addView(
+            pill(a, "\u26F6") {
                 val pos = vv.currentPosition
                 val act = host?.get()
                 close()
@@ -321,17 +344,25 @@ internal object InlineVideo {
             },
             corner(a, Gravity.TOP or Gravity.START),
         )
+        val playPause = pill(a, "\u23F8") {
+            if (vv.isPlaying) vv.pause() else vv.start()
+            showCtl()
+        }
+        ctl.addView(playPause, corner(a, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
 
         decor.addView(root, FrameLayout.LayoutParams(targetW, targetH, Gravity.TOP or Gravity.START))
         box = root
         video = vv
         seek = bar
         follow(root, pic, decor)
+        showCtl()
         root.postOnAnimation(object : Runnable {
             override fun run() {
                 if (box !== root) return
                 if (!follow(root, pic, decor)) return
                 if (!dragging) seek?.progress = vv.currentPosition
+                val symbol = if (vv.isPlaying) "\u23F8" else "\u25B6"
+                if (playPause.text.toString() != symbol) playPause.text = symbol
                 root.postOnAnimation(this)
             }
         })
@@ -400,7 +431,7 @@ internal object InlineVideo {
         return true
     }
 
-    private fun runUi(a: Activity, block: () -> Unit) {
+    internal fun runUi(a: Activity, block: () -> Unit) {
         if (android.os.Looper.myLooper() === android.os.Looper.getMainLooper()) block() else a.runOnUiThread { block() }
     }
 }

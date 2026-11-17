@@ -213,18 +213,20 @@ val aegiresNative = plugin {
             FileOps.progress(outPath)
         }
 
-        // Full-screen playback of a decrypted video or audio file, with a title for audio. Returns "ok".
+        // Playback of a decrypted video or audio file: in the chat when mode is "inline", else full screen. Returns "ok".
         registerNativeMethod("aegires.playmedia") { rawArgs ->
             val args = rawArgs.asDelegate()
             val path: String by args.string()
             val title: String by args.string()
-            val mode: String by args.string() // "inline" = play in the chat (video only), anything else = full screen
+            val mode: String by args.string() // "inline" = play in the chat (video and audio), anything else = full screen
             val vw: String by args.string() // the picture's pixel size, to pick the right view (0 = unknown)
             val vh: String by args.string()
             if (!VideoPlayer.allowed(path)) throw IllegalArgumentException("path not allowed")
             withAppActivity {
-                InlineVideo.note("not tried: " + (if (mode != "inline") "full-screen mode" else "audio file"))
-                if (mode == "inline" && !VideoPlayer.isAudio(path)) {
+                InlineVideo.note("not tried: full-screen mode")
+                if (mode == "inline" && VideoPlayer.isAudio(path)) {
+                    InlineAudio.start(it, path, title, vw.toIntOrNull() ?: 0, vh.toIntOrNull() ?: 0)
+                } else if (mode == "inline") {
                     InlineVideo.start(it, path, title, vw.toIntOrNull() ?: 0, vh.toIntOrNull() ?: 0)
                 } else {
                     VideoPlayer.show(it, path, title)
@@ -277,6 +279,7 @@ val aegiresNative = plugin {
     stop {
         VideoPlayer.close()
         InlineVideo.close()
+        InlineAudio.close()
         TouchSpy.shutdown()
         EncryptButton.shutdown()
         log.i("Aegires native crypto unloaded")
