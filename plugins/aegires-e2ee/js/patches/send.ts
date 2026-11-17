@@ -18,8 +18,6 @@ import { LOCK, getSendKey, hasGlobalKey, isEncryptionOn } from "../state.ts";
 import { BLOCK, captionSizeTag, prepare, uploadFileName } from "../outgoing.ts";
 import { wasEncrypted } from "./receive.ts";
 import { interceptTyped } from "../commands.ts";
-import { DEV_BUILD } from "../about.ts";
-import { probeGifSend } from "./gif.ts";
 
 /** Attachments riding along with sendMessage, if any. */
 function attachmentsOf(message: any, options: any): any[] {
@@ -48,7 +46,6 @@ export function installSendPatch(): () => void {
           return orig(...args);
         }
         if (interceptTyped(channelId, message.content)) return Promise.resolve();
-        if (DEV_BUILD) probeGifSend(channelId, message, options); // dry run only: the message goes out as before
         const files = attachmentsOf(message, options);
         if (files.length && isEncryptionOn(channelId)) {
           // Files were encrypted when they were attached (receive.ts). Anything that is not

@@ -213,7 +213,6 @@ function SettingsInner() {
         <ToggleRow label="Show an E2EE on/off button in the chat header, left of the search icon" value={storage.encButton !== false} onChange={(v) => { storage.encButton = v; refresh(); }} />
         <ToggleRow label="Show a lock icon next to the time of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
         {DEV_BUILD ? <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} /> : null}
-        {DEV_BUILD ? <ToggleRow label="GIF dry run: when you send a Tenor / Giphy link in an encrypted chat, ALSO download and encrypt that GIF in the background to test the pipeline. Nothing is attached or sent, the result is in Diagnostics. This phone contacts the GIF site" value={!!storage.gifDryRun} onChange={(v) => { storage.gifDryRun = v; refresh(); }} /> : null}
       </Card>
 
       <Card title="Per-chat key / switch" hint="Channel ID is pre-filled with the chat you had open. Leave the password empty to only change on/off.">

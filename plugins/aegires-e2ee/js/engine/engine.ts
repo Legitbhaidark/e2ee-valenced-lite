@@ -234,16 +234,6 @@ export async function nativeLinkPreview(url: string): Promise<LinkPreviewData | 
   return d && typeof d === "object" ? (d as LinkPreviewData) : null;
 }
 
-export interface FetchedMedia { path: string; mime: string; size: number; url: string; how: string; found: string; ms: number }
-
-/** Downloads the media behind a Tenor / Giphy / direct media link, resolved and fetched ON THIS DEVICE. outBase has no extension: the native half adds it. */
-export async function nativeFetchMedia(url: string, outBase: string, maxBytes: number): Promise<FetchedMedia> {
-  const out = await callNative("fetchmedia", [url, outBase, String(maxBytes)], FILE_TIMEOUT_MS);
-  const d = typeof out === "string" ? JSON.parse(out) : null;
-  if (!d || typeof d.path !== "string") throw new Error("native returned no file");
-  return d as FetchedMedia;
-}
-
 /** Deletes a file or folder through Valenced's fs method. Never rejects. */
 export async function removePath(path: string): Promise<void> {
   try {
