@@ -257,6 +257,23 @@ val aegiresNative = plugin {
             LinkPreview.fetch(url)
         }
 
+        // The settings screen (SettingsScreen.kt): open it, change what it shows, and poll what the user did.
+        registerNativeMethod("aegires.settingsopen") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val json: String by args.string()
+            withAppActivity { SettingsScreen.show(it, json) }
+            "ok"
+        }
+
+        registerNativeMethod("aegires.settingsupdate") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val json: String by args.string()
+            SettingsScreen.update(json)
+            "ok"
+        }
+
+        registerNativeMethod("aegires.settingstake") { _ -> SettingsScreen.take() }
+
         // Full-screen playback of a decrypted video file (path under .../aegires/). Returns "ok".
         registerNativeMethod("aegires.playvideo") { rawArgs ->
             val args = rawArgs.asDelegate()
@@ -268,6 +285,7 @@ val aegiresNative = plugin {
     }
 
     stop {
+        SettingsScreen.close()
         VideoPlayer.close()
         InlineVideo.close()
         InlineAudio.close()

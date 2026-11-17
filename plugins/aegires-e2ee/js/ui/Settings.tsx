@@ -10,7 +10,6 @@ import {
   MAX_KDF_PASSES,
   PRESETS,
   applyDevKdf,
-  clearGlobalKey,
   getPreset,
   hasGlobalKey,
   listChannelConfigs,
@@ -27,9 +26,9 @@ import { getSelfId } from "../self.ts";
 import { benchCrypto, fmtMs, measureKdf, runSelfTest } from "../selftest.ts";
 import { getKdfOverride } from "../crypto/kdf2.ts";
 import { diag, diagLines } from "../diag.ts";
-import { EngineHost } from "../engine/engine.ts";
-import { clearLinkPreviews } from "../patches/embeds.ts";
-import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "../about.ts";
+import { EngineHost, nativeReady } from "../engine/engine.ts";
+import { openNativeSettings } from "../nativeSettings.ts";
+import { DEV_BUILD } from "../about.ts";
 
 // React Native binds after this script is evaluated, so each primitive is resolved at render time.
 const lazy = (names: string[], fallback?: () => any) => (props: any) => {
@@ -137,7 +136,6 @@ function SettingsInner() {
   const [benchMiB, setBenchMiB] = React.useState("8");
   const [benchJs, setBenchJs] = React.useState(false);
   const [benchLines, setBenchLines] = React.useState([] as string[]);
-  const [autoMb, setAutoMb] = React.useState(String(storage.autoDecryptMB ?? 25));
   const [kdfMem, setKdfMem] = React.useState(String(storage.devKdfMemMiB ?? 64));
   const [kdfPasses, setKdfPasses] = React.useState(String(storage.devKdfPasses ?? 3));
   const [pct, setPct] = React.useState(-1); // Argon2id progress, -1 = idle
@@ -162,23 +160,30 @@ function SettingsInner() {
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
       <EngineHost />
-      <Card
-        title={"Global key " + (hasGlobalKey() ? "(set)" : "(not set)")}
-        hint={"Used in every chat that has no channel key. Everyone in the chat must type the SAME password (at least " + passwordRule() + "), and Aegires users must use the same one in the app. The password is not saved - only the keys derived from it (v1 and v2). Deriving the v2 key (Argon2id, 64 MiB) can take a while on a phone."}
-      >
-        <Field value={pw} onChange={setPw} placeholder="Shared password" secret />
+      <Card title="Settings" hint="The main settings (global key, behaviour, plugin versions) are on the native settings screen.">
         <Button
-          label={busy ? busyLabel("Deriving key") : "Set global key"}
-          busy={busy}
+          label="Open settings screen"
           onPress={() => {
-            if (!pw) return showToast("Password cannot be empty");
-            run("Set global key", async () => {
-              await setGlobalPassword(pw, onProgress);
-              setPw("");
-            });
+            openNativeSettings().then((why: string) => { if (why) showToast(why); });
           }}
         />
-        {hasGlobalKey() ? <Button label="Clear global key" danger onPress={() => { clearGlobalKey(); showToast("Global key cleared"); refresh(); }} /> : null}
+        {!nativeReady() ? (
+          <>
+            <Text style={{ color: C.muted, marginTop: 8 }}>{"Native module not loaded. You can still set the global key here (at least " + passwordRule() + "):"}</Text>
+            <Field value={pw} onChange={setPw} placeholder="Shared password" secret />
+            <Button
+              label={busy ? busyLabel("Deriving key") : "Set global key"}
+              busy={busy}
+              onPress={() => {
+                if (!pw) return showToast("Password cannot be empty");
+                run("Set global key", async () => {
+                  await setGlobalPassword(pw, onProgress);
+                  setPw("");
+                });
+              }}
+            />
+          </>
+        ) : null}
       </Card>
 
       <Card
@@ -202,18 +207,6 @@ function SettingsInner() {
           ))}
         </Card>
       ) : null}
-
-      <Card title="Behaviour">
-        <ToggleRow label="Encrypt outgoing messages by default (in chats without their own on/off setting)" value={!!storage.encryptByDefault} onChange={(v) => { storage.encryptByDefault = v; refresh(); }} />
-        <ToggleRow label="Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats" value={!!storage.attachmentsExp} onChange={(v) => { storage.attachmentsExp = v; refresh(); }} />
-        <ToggleRow label="Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default" value={!!storage.linkPreviews} onChange={(v) => { storage.linkPreviews = v; if (!v) clearLinkPreviews(); refresh(); }} />
-        <Text style={{ color: C.text, marginTop: 8 }}>Encrypted files larger than this many MB show "Tap to decrypt" instead of downloading on their own (0 = always ask, default 25):</Text>
-        <Field value={autoMb} onChange={(v) => { const d = v.replace(/[^0-9]/g, "").slice(0, 4); setAutoMb(d); storage.autoDecryptMB = d === "" ? 25 : Number(d); }} placeholder="MB (default 25)" />
-        <ToggleRow label="Play videos in the chat (on their picture) instead of full screen" value={storage.inlineVideo !== false} onChange={(v) => { storage.inlineVideo = v; refresh(); }} />
-        <ToggleRow label="Show an E2EE on/off button in the chat header, left of the search icon" value={storage.encButton !== false} onChange={(v) => { storage.encButton = v; refresh(); }} />
-        <ToggleRow label="Show a lock icon next to the time of decrypted messages" value={!!storage.showLock} onChange={(v) => { storage.showLock = v; refresh(); }} />
-        {DEV_BUILD ? <ToggleRow label="Debug logging" value={!!storage.debug} onChange={(v) => { storage.debug = v; refresh(); }} /> : null}
-      </Card>
 
       <Card title="Per-chat key / switch" hint="Channel ID is pre-filled with the chat you had open. Leave the password empty to only change on/off.">
         <Field value={chanId} onChange={setChanId} placeholder="Channel ID" />
@@ -309,15 +302,6 @@ function SettingsInner() {
       </Card>
 
       ) : null}
-
-      <Card title="Plugin versions">
-        <Text style={{ color: C.text, marginTop: 8 }}>{"Developer: " + DEVELOPER}</Text>
-        <Text style={{ color: C.text, marginTop: 4 }}>{"Version: " + PLUGIN_VERSION}</Text>
-        <Text style={{ color: C.text, marginTop: 4 }}>{"Build number: " + BUILD_ID}</Text>
-        <Text style={{ color: C.muted, marginTop: 8 }}>{"Message format: Aegires v2 (v1 read-only)"}</Text>
-        <Text style={{ color: C.muted, marginTop: 4 }}>{"File format: Aegires v2"}</Text>
-        <Text style={{ color: C.muted, marginTop: 4 }}>{"Native module: " + (diag.installed["native crypto"] ?? "not started")}</Text>
-      </Card>
 
       {DEV_BUILD ? (
         <Card title="Developer options" hint="For testing only. These options make the client less secure.">
