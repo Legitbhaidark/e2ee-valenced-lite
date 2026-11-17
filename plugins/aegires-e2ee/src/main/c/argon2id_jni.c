@@ -87,19 +87,28 @@ static void hprime(const uint8_t *in, size_t inlen, int outlen, uint8_t *out){
     memset(v,0,sizeof(v)); memset(withlen,0,4+inlen); free(withlen);
 }
 
-static inline uint64_t mix64(uint64_t x,uint64_t y){ uint64_t lo=(x&0xFFFFFFFFULL)*(y&0xFFFFFFFFULL); return x+y+2*lo; }
-static void g_a(uint64_t v[WORDS], int a,int b,int c,int d){
-    v[a]=mix64(v[a],v[b]); v[d]=rotr64(v[d]^v[a],32);
-    v[c]=mix64(v[c],v[d]); v[b]=rotr64(v[b]^v[c],24);
-    v[a]=mix64(v[a],v[b]); v[d]=rotr64(v[d]^v[a],16);
-    v[c]=mix64(v[c],v[d]); v[b]=rotr64(v[b]^v[c],63);
+/* BlaMka multiply-add. The 32x32->64 multiply is one instruction (umull) on ARM. */
+static inline __attribute__((always_inline)) uint64_t mix64(uint64_t x,uint64_t y){ uint64_t lo=(x&0xFFFFFFFFULL)*(y&0xFFFFFFFFULL); return x+y+2*lo; }
+
+/* One G step on four local variables (they stay in registers instead of going through memory). */
+#define GB(a,b,c,d) do { \
+    a=mix64(a,b); d=rotr64(d^a,32); \
+    c=mix64(c,d); b=rotr64(b^c,24); \
+    a=mix64(a,b); d=rotr64(d^a,16); \
+    c=mix64(c,d); b=rotr64(b^c,63); \
+} while(0)
+
+/* Permutation P over 16 words picked from v: load into locals, 8 G steps, store back. */
+static inline __attribute__((always_inline)) void p_a(uint64_t *v, int i0,int i1,int i2,int i3,int i4,int i5,int i6,int i7,int i8,int i9,int i10,int i11,int i12,int i13,int i14,int i15){
+    uint64_t a0=v[i0],a1=v[i1],a2=v[i2],a3=v[i3],a4=v[i4],a5=v[i5],a6=v[i6],a7=v[i7];
+    uint64_t a8=v[i8],a9=v[i9],a10=v[i10],a11=v[i11],a12=v[i12],a13=v[i13],a14=v[i14],a15=v[i15];
+    GB(a0,a4,a8,a12); GB(a1,a5,a9,a13); GB(a2,a6,a10,a14); GB(a3,a7,a11,a15);
+    GB(a0,a5,a10,a15); GB(a1,a6,a11,a12); GB(a2,a7,a8,a13); GB(a3,a4,a9,a14);
+    v[i0]=a0; v[i1]=a1; v[i2]=a2; v[i3]=a3; v[i4]=a4; v[i5]=a5; v[i6]=a6; v[i7]=a7;
+    v[i8]=a8; v[i9]=a9; v[i10]=a10; v[i11]=a11; v[i12]=a12; v[i13]=a13; v[i14]=a14; v[i15]=a15;
 }
-static void p_a(uint64_t v[WORDS], int i0,int i1,int i2,int i3,int i4,int i5,int i6,int i7,int i8,int i9,int i10,int i11,int i12,int i13,int i14,int i15){
-    g_a(v,i0,i4,i8,i12); g_a(v,i1,i5,i9,i13); g_a(v,i2,i6,i10,i14); g_a(v,i3,i7,i11,i15);
-    g_a(v,i0,i5,i10,i15); g_a(v,i1,i6,i11,i12); g_a(v,i2,i7,i8,i13); g_a(v,i3,i4,i9,i14);
-}
-static void fill_block(uint64_t *x,uint64_t *y,uint64_t *out,int xorout,uint64_t r[WORDS],uint64_t z[WORDS]){
-    for(int i=0;i<WORDS;i++){ r[i]=x[i]^y[i]; z[i]=r[i]; }
+static void fill_block(const uint64_t *x,const uint64_t *y,uint64_t *out,int xorout,uint64_t r[WORDS],uint64_t z[WORDS]){
+    for(int i=0;i<WORDS;i++){ uint64_t t=x[i]^y[i]; r[i]=t; z[i]=t; }
     for(int i=0;i<8;i++){ int b=16*i; p_a(z,b,b+1,b+2,b+3,b+4,b+5,b+6,b+7,b+8,b+9,b+10,b+11,b+12,b+13,b+14,b+15); }
     for(int i=0;i<8;i++){ int b=2*i; p_a(z,b,b+1,b+16,b+17,b+32,b+33,b+48,b+49,b+64,b+65,b+80,b+81,b+96,b+97,b+112,b+113); }
     if(xorout){ for(int i=0;i<WORDS;i++) out[i]^=z[i]^r[i]; } else { for(int i=0;i<WORDS;i++) out[i]=z[i]^r[i]; }

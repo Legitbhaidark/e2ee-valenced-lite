@@ -28,6 +28,15 @@ The build number in the plugin settings is `YYMMVVVV-release` or `YYMMVVVV-dev`.
 
 Never publish a labeled version from `main` or a plain one from `dev`; `check-channel.sh` fails the run.
 
+## GitHub Releases (downloadable zips)
+
+Every publish also creates a GitHub Release `aegires-e2ee@<version>` with the installable zip attached:
+
+- `dev` builds (`0.1.30-dev19`) become **pre-releases**, notes = the commits since the previous dev build.
+- `main` builds (`0.1.30`) become the **latest** release, notes = the commits since the previous stable release.
+- To write the stable notes by hand, add `release-notes/0.1.30.md` before merging to `main`. It is used as
+  written; the install lines are appended automatically.
+
 ## Channels
 
 | Channel | Points at | Moves |
