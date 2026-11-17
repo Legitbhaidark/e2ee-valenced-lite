@@ -9,13 +9,12 @@ import { register } from "node:module";
 let realCrypto = true;
 try {
   import.meta.resolve("@noble/hashes/sha256");
-  import.meta.resolve("fflate");
 } catch {
   realCrypto = false;
   const hooks = `
-    const NAMES = ["blake2b","deflateSync","inflateSync","ghash","hkdf","pbkdf2Async","sha1","sha256"];
+    const NAMES = ["blake2b","ghash","hkdf","pbkdf2Async","sha1","sha256"];
     export async function resolve(spec, ctx, next) {
-      if (/^@noble\\//.test(spec) || spec === "fflate") return { url: "stub:" + spec, shortCircuit: true };
+      if (/^@noble\\//.test(spec)) return { url: "stub:" + spec, shortCircuit: true };
       return next(spec, ctx);
     }
     export async function load(url, ctx, next) {

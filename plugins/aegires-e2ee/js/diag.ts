@@ -11,7 +11,7 @@ export const diag = {
   noKey: 0,
   wrongKey: 0,
   noAuthor: 0, // v2 message but its author id was unknown (the author is part of the key)
-  lastKdfMs: 0, // how long the last key derivation (PBKDF2 + Argon2id) took
+  lastKdfMs: 0, // how long the last key derivation (Argon2id) took
   sendCalls: 0,
   lastSend: "(no send seen yet)",
   attSeen: 0, // encrypted attachments seen

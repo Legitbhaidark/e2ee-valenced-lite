@@ -2,7 +2,7 @@
 // It checks our side of the contract (what we call, what we return), not Valenced itself.
 //
 // Run from the plugin folder:  node test/glue.mjs     (Node 22.18+ runs the .ts files directly)
-// When @noble/* and fflate are installed the real crypto runs too, including a full
+// When @noble/* are installed the real crypto runs too, including a full
 // send -> receive round trip. When they are missing the crypto packages are stubbed and the
 // round trip is skipped.
 import assert from "node:assert/strict";
@@ -11,13 +11,12 @@ import { register } from "node:module";
 let realCrypto = true;
 try {
   import.meta.resolve("@noble/hashes/sha256");
-  import.meta.resolve("fflate");
 } catch {
   realCrypto = false;
   const hooks = `
-    const NAMES = ["blake2b","deflateSync","inflateSync","ghash","hkdf","pbkdf2Async","sha1","sha256"];
+    const NAMES = ["blake2b","ghash","hkdf","pbkdf2Async","sha1","sha256"];
     export async function resolve(spec, ctx, next) {
-      if (/^@noble\\//.test(spec) || spec === "fflate") return { url: "stub:" + spec, shortCircuit: true };
+      if (/^@noble\\//.test(spec)) return { url: "stub:" + spec, shortCircuit: true };
       return next(spec, ctx);
     }
     export async function load(url, ctx, next) {
@@ -254,7 +253,6 @@ initStorage();
 if (realCrypto) {
   const { toHex } = await import("../js/crypto/hex.ts");
   storage.keyV2 = toHex(new Uint8Array(32).fill(7));
-  storage.format = "v2";
   setChannelEnabled(CH, true);
 
   const api2 = makeApi();
@@ -286,7 +284,7 @@ if (realCrypto) {
   undoSend();
   undoRecv();
 } else {
-  console.log("  --  skipped: round trip with real crypto (install @noble/* and fflate to run it)");
+  console.log("  --  skipped: round trip with real crypto (install @noble/* to run it)");
 }
 
 await detachStorage();

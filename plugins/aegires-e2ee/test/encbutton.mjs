@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 
 const hooks = `
-  const NAMES = ["blake2b","deflateSync","inflateSync","ghash","hkdf","pbkdf2Async","sha1","sha256"];
+  const NAMES = ["blake2b","ghash","hkdf","pbkdf2Async","sha1","sha256"];
   export async function resolve(spec, ctx, next) {
-    if (/^@noble\\//.test(spec) || spec === "fflate") return { url: "stub:" + spec, shortCircuit: true };
+    if (/^@noble\\//.test(spec)) return { url: "stub:" + spec, shortCircuit: true };
     return next(spec, ctx);
   }
   export async function load(url, ctx, next) {
@@ -74,7 +74,6 @@ assert.equal(isEncryptionOn(CH), false);
 ok("a press switches this chat on, the next one off");
 
 delete storage.keyV2;
-storage.globalKeyHex = undefined;
 assert.match(pressed(CH), /No key for this chat/);
 assert.equal(isEncryptionOn(CH), false, "no key: stays off and says why");
 storage.keyV2 = "ab".repeat(32);

@@ -5,11 +5,11 @@
 // plaintext to a channel where the user believes encryption is on would be the worst bug.
 import { notify } from "./notify.ts";
 import { RN } from "./rt.ts";
-import { MAX_PLAINTEXT_LEN, encryptBytes, encryptText, looksEncrypted } from "./crypto/wire.ts";
+import { looksEncrypted } from "./crypto/wire.ts";
 import { MAX_FILE_BYTES, encryptedFileName, extOf, imageDims, imageMimeFor, makeSizeTags, mimeFor, videoDims } from "./crypto/files.ts";
 import { storage } from "./storage.ts";
 import { encryptFile, encryptMessage, maxPlaintextBytes, utf8Length } from "./crypto/v2.ts";
-import { getSendFormat, getSendKey, getSendKeyV2, getSendPreset, isEncryptionOn } from "./state.ts";
+import { getSendKeyV2, getSendPreset, isEncryptionOn } from "./state.ts";
 import { getSelfId } from "./self.ts";
 import { readUri, readUriBase64, tempName, writeCacheFile, writeCacheFileBase64 } from "./native.ts";
 import { base64Decode, base64Encode } from "./crypto/base64.ts";
@@ -28,36 +28,24 @@ export function prepare(channelId: string, content: unknown, force = false): str
   if (!force && !isEncryptionOn(channelId)) return null;
 
   try {
-    if (getSendFormat(channelId) === "v2") {
-      const key = getSendKeyV2(channelId);
-      if (!key) {
-        notify("E2EE is on for this chat but no v2 key is set (set the password again in the plugin settings) - message not sent");
-        return BLOCK;
-      }
-      const self = getSelfId();
-      if (!self) {
-        notify("Your Discord user id is not known yet, so the message cannot be encrypted - not sent. Try again in a moment.");
-        return BLOCK;
-      }
-      const preset = getSendPreset(channelId);
-      const max = maxPlaintextBytes(preset);
-      const len = utf8Length(content);
-      if (len > max) {
-        notify(`Too long to encrypt with ${preset.label} (${len}/${max} bytes) - message not sent`);
-        return BLOCK;
-      }
-      return encryptMessage(content, key, preset, channelId, self, { padme: storage.padme !== false });
-    }
-    const key = getSendKey(channelId);
+    const key = getSendKeyV2(channelId);
     if (!key) {
-      notify("E2EE is on for this chat but no key is set - message not sent");
+      notify("E2EE is on for this chat but no v2 key is set (set the password again in the plugin settings) - message not sent");
       return BLOCK;
     }
-    if (content.length > MAX_PLAINTEXT_LEN) {
-      notify(`Too long to encrypt (${content.length}/${MAX_PLAINTEXT_LEN}) - message not sent`);
+    const self = getSelfId();
+    if (!self) {
+      notify("Your Discord user id is not known yet, so the message cannot be encrypted - not sent. Try again in a moment.");
       return BLOCK;
     }
-    return encryptText(content, key);
+    const preset = getSendPreset(channelId);
+    const max = maxPlaintextBytes(preset);
+    const len = utf8Length(content);
+    if (len > max) {
+      notify(`Too long to encrypt with ${preset.label} (${len}/${max} bytes) - message not sent`);
+      return BLOCK;
+    }
+    return encryptMessage(content, key, preset, channelId, self, { padme: storage.padme !== false });
   } catch (e) {
     notify("Encryption failed - message not sent");
     console.log("[aegires-e2ee] encrypt error", e);
@@ -239,10 +227,6 @@ export function encryptAttachments(channelId: string, files: any[]): Promise<boo
  * false (the caller must then NOT send).
  */
 export async function encryptOutgoing(channelId: string, uploads: any[], captions: any[]): Promise<boolean> {
-  if (getSendFormat(channelId) !== "v2") {
-    notify("Attachments need the v2 format in this build - upload cancelled. Switch this chat to v2 in the plugin settings.");
-    return false;
-  }
   // v2 file format: per-file HKDF key bound to (channel, sender), 64 KiB authenticated chunks.
   const key = getSendKeyV2(channelId);
   const self = getSelfId();

@@ -1,40 +1,36 @@
 // Plugin settings + key management.
 //
-// Two Aegires formats are supported side by side:
-//   v1: PBKDF2-SHA1 key, AES-256-GCM. Old messages and older Aegires clients.
-//   v2: Argon2id master key (64 MiB, slow), per-message HKDF keys bound to (channel, author),
-//       AES-128/192/256-GCM presets. Default for sending.
-// One password gives both keys. They are derived ONCE when you type the password and only the
-// derived keys are stored (hex); the password itself is never saved. The derived keys are still
-// secrets: anyone who can read this plugin's storage can read your chats.
+// Only the Aegires v2 format exists (v1 support was dropped in 0.1.31):
+//   Argon2id master key (64 MiB, slow), per-message HKDF keys bound to (channel, author),
+//   AES-128/192/256-GCM presets.
+// The key is derived ONCE when you type the password and only the derived key is stored (hex);
+// the password itself is never saved. The derived key is still a secret: anyone who can read this
+// plugin's storage can read your chats.
 import { DEV_BUILD } from "./about.ts";
 import { storage } from "./storage.ts";
-import { deriveKey } from "./crypto/keys.ts";
 import { deriveMasterKey, setArgonEngine, setKdfOverride, type ArgonEngine } from "./crypto/kdf2.ts";
 import { fromHex, toHex } from "./crypto/hex.ts";
 import { AES128, AES256, PRESETS, presetFromIndex, type Preset } from "./crypto/v2.ts";
 import { FORCED_CHANNELS } from "./forced.ts";
 import { diag } from "./diag.ts";
 
-export type Format = "v1" | "v2";
-
 interface ChannelConfig {
-  keyHex?: string; // v1 channel key; falls back to the global key
   keyV2?: string; // v2 channel key; falls back to the global key
   enabled?: boolean; // encrypt outgoing messages here? (falls back to encryptByDefault)
 }
 
 export function initStorage(): void {
-  storage.globalKeyHex ??= "";
   storage.keyV2 ??= "";
-  storage.format ??= "v2";
   storage.devMode = DEV_BUILD; // developer options: always on in dev builds, never in release builds
   storage.devShortPw ??= false; // developer option: allow 1-character passwords
   storage.devKdfOn ??= false; // developer option: custom Argon2id passes / memory (keys no longer match other clients)
   storage.devKdfMemMiB ??= 64;
   storage.devKdfPasses ??= 3;
   storage.devArgonEngine ??= "auto"; // developer option: auto | c | java
-  if (storage.format === "v1" && !storage.devMode) storage.format = "v2"; // v1 is behind developer options
+  // v1 is gone: drop its leftovers (old keys, format choice, per-chat v1 keys)
+  delete storage.globalKeyHex;
+  delete storage.format;
+  for (const id of Object.keys(storage.channels ?? {})) delete storage.channels[id]?.keyHex;
   storage.preset ??= AES256.index;
   storage.padme ??= true;
   storage.channels ??= {};
@@ -113,19 +109,9 @@ function collect(...ks: Array<Uint8Array | null>): Uint8Array[] {
   return out;
 }
 
-/** v1 key we ENCRYPT with in this channel (channel key wins over global). */
-export function getSendKey(channelId: string): Uint8Array | null {
-  return keyFromHex(cfg(channelId)?.keyHex) ?? keyFromHex(storage.globalKeyHex);
-}
-
 /** v2 master key we ENCRYPT with: built-in (forced) > channel key > global key. */
 export function getSendKeyV2(channelId: string): Uint8Array | null {
   return forcedKey(channelId) ?? keyFromHex(cfg(channelId)?.keyV2) ?? keyFromHex(storage.keyV2);
-}
-
-/** v1 keys worth trying when DECRYPTING in this channel, most specific first. */
-export function getReceiveKeys(channelId: string | undefined): Uint8Array[] {
-  return collect(channelId ? keyFromHex(cfg(channelId)?.keyHex) : null, keyFromHex(storage.globalKeyHex));
 }
 
 /** v2 master keys worth trying when DECRYPTING in this channel, most specific first. */
@@ -134,15 +120,10 @@ export function getReceiveKeysV2(channelId: string | undefined): Uint8Array[] {
 }
 
 export function hasGlobalKey(): boolean {
-  return !!keyFromHex(storage.globalKeyHex) || !!keyFromHex(storage.keyV2);
+  return !!keyFromHex(storage.keyV2);
 }
 
 // ------------------------------------------------------------------------ format + preset
-
-/** Format for OUTGOING messages/files here. Built-in channels are always v2. */
-export function getSendFormat(channelId: string): Format {
-  return isForced(channelId) || storage.format !== "v1" ? "v2" : "v1";
-}
 
 export function getPreset(): Preset {
   return presetFromIndex(Number(storage.preset)) ?? AES256;
@@ -159,9 +140,9 @@ export function setPreset(index: number): void {
 
 export { PRESETS };
 
-/** True when the key needed for this channel's send format exists. */
+/** True when a key to encrypt with in this channel exists. */
 export function canSend(channelId: string): boolean {
-  return getSendFormat(channelId) === "v2" ? !!getSendKeyV2(channelId) : !!getSendKey(channelId);
+  return !!getSendKeyV2(channelId);
 }
 
 // ------------------------------------------------------------------------ on / off
@@ -203,37 +184,33 @@ export function isDeriving(): boolean {
   return deriving;
 }
 
-/** Derives the v1 and v2 keys for a password. Argon2id is the slow part (progress 0..1). */
-async function derive(password: string, onProgress?: (fraction: number) => void): Promise<{ v1: string; v2: string }> {
+/** Derives the master key (hex) for a password. Argon2id is the slow part (progress 0..1). */
+async function derive(password: string, onProgress?: (fraction: number) => void): Promise<string> {
   const problem = checkPassword(password);
   if (problem) throw new Error(problem);
   if (deriving) throw new Error("A key is already being derived - wait for it to finish");
   deriving = true;
   const t0 = Date.now();
   try {
-    const v1 = toHex(await deriveKey(password));
-    const v2 = toHex(await deriveMasterKey(password, { onProgress }));
+    const key = toHex(await deriveMasterKey(password, { onProgress }));
     diag.lastKdfMs = Date.now() - t0;
-    return { v1, v2 };
+    return key;
   } finally {
     deriving = false;
   }
 }
 
 export async function setGlobalPassword(password: string, onProgress?: (fraction: number) => void): Promise<void> {
-  const k = await derive(password, onProgress);
-  storage.globalKeyHex = k.v1;
-  storage.keyV2 = k.v2;
+  storage.keyV2 = await derive(password, onProgress);
 }
 
 export function clearGlobalKey(): void {
-  storage.globalKeyHex = "";
   storage.keyV2 = "";
 }
 
 export async function setChannelPassword(channelId: string, password: string, onProgress?: (fraction: number) => void): Promise<void> {
-  const k = await derive(password, onProgress);
-  storage.channels[channelId] = { ...(storage.channels[channelId] ?? {}), keyHex: k.v1, keyV2: k.v2 };
+  const keyV2 = await derive(password, onProgress);
+  storage.channels[channelId] = { ...(storage.channels[channelId] ?? {}), keyV2 };
 }
 
 export function removeChannelConfig(channelId: string): void {
@@ -244,7 +221,7 @@ export function listChannelConfigs(): Array<{ id: string; hasKey: boolean; enabl
   const out: Array<{ id: string; hasKey: boolean; enabled: boolean | undefined }> = [];
   for (const id of Object.keys(storage.channels ?? {})) {
     const c = storage.channels[id] as ChannelConfig;
-    out.push({ id, hasKey: !!(c?.keyHex || c?.keyV2), enabled: c?.enabled });
+    out.push({ id, hasKey: !!c?.keyV2, enabled: c?.enabled });
   }
   return out;
 }

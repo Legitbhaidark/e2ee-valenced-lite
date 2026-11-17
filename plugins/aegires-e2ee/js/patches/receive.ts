@@ -12,10 +12,10 @@
 import { noteFound, selectedChannelId } from "../patch.ts";
 import { unscoped } from "../host.ts";
 import { storage } from "../storage.ts";
-import { decryptText, looksEncrypted } from "../crypto/wire.ts";
+import { looksEncrypted } from "../crypto/wire.ts";
 import { splitSizeTags } from "../crypto/files.ts";
 import { decryptMessage as decryptV2, messagePreset } from "../crypto/v2.ts";
-import { LOCK, getReceiveKeys, lockMode, getReceiveKeysV2, isEncryptionOn } from "../state.ts";
+import { LOCK, lockMode, getReceiveKeysV2, isEncryptionOn } from "../state.ts";
 import { noteSelfId } from "../self.ts";
 import { notify } from "../notify.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
@@ -55,11 +55,10 @@ function authorOf(m: any): string | undefined {
 
 type Outcome = { plain: string } | "nokey" | "noauthor" | "wrong";
 
-/** Tries v2 (when the header says so and the author is known), then v1. */
+/** Decrypts a v2 message (needs the channel and the author id). */
 function tryDecrypt(content: string, channelId: string | undefined, authorId: string | undefined): Outcome {
   const v2keys = getReceiveKeysV2(channelId);
-  const v1keys = getReceiveKeys(channelId);
-  if (!v2keys.length && !v1keys.length) return "nokey";
+  if (!v2keys.length) return "nokey";
   const isV2 = !!messagePreset(content);
   if (isV2 && channelId && authorId) {
     for (const key of v2keys) {
@@ -67,12 +66,7 @@ function tryDecrypt(content: string, channelId: string | undefined, authorId: st
       if (plain !== null) return { plain };
     }
   }
-  // A v1 ciphertext starts with a random IV, so it can look like a v2 header by chance.
-  for (const key of v1keys) {
-    const plain = decryptText(content, key);
-    if (plain !== null) return { plain };
-  }
-  return isV2 && v2keys.length && (!channelId || !authorId) ? "noauthor" : "wrong";
+  return isV2 && (!channelId || !authorId) ? "noauthor" : "wrong";
 }
 
 function decryptMessage(m: any, fallbackChannelId?: string): void {

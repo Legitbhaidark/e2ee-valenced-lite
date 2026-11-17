@@ -40,7 +40,7 @@ let closeCb: (() => void) | null = null;
 function diagText(): string {
   return (
     "global key: " + (hasGlobalKey() ? "set" : "NOT SET") +
-    "\nformat: " + (storage.format === "v1" ? "v1" : "v2 " + getPreset().label) +
+    "\nformat: v2 " + getPreset().label +
     (storageNote() ? "\nSTORAGE: " + storageNote() : "") +
     "\nown user id: " + (getSelfId() ? "known" : "NOT FOUND YET") +
     "\n" + diagLines().join("\n")
@@ -51,7 +51,6 @@ function diagText(): string {
 function devSnapshot(): Record<string, unknown> {
   return {
     diagText: diagText(),
-    v1: storage.format === "v1",
     shortPw: !!storage.devShortPw,
     engine: String(storage.devArgonEngine ?? "auto"),
     kdfOn: !!storage.devKdfOn,
@@ -70,7 +69,6 @@ export function snapshot(): Record<string, unknown> {
     hasKey: hasGlobalKey(),
     rule: passwordRule(),
     values,
-    format: storage.format === "v1" ? "v1" : "v2",
     preset: getPreset().index,
     presets: PRESETS.map((x: any) => ({ index: x.index, label: x.label, max: maxPlaintextBytes(x) })),
     forced: Object.keys(FORCED_CHANNELS),
@@ -100,7 +98,6 @@ export async function handleEvent(ev: any): Promise<void> {
     } else if (ev?.t === "setPreset") {
       const i = Number(ev.i);
       if (PRESETS.some((x: any) => x.index === i)) {
-        storage.format = "v2";
         setPreset(i);
       }
     } else if (ev?.t === "dev") {
@@ -193,10 +190,9 @@ async function handleDev(ev: any): Promise<void> {
       await update({ devBench: [] });
       await benchCrypto(mib, ev.js === true, (l) => { void update({ devBench: l }).catch(() => {}); }, progress);
     });
-  } else if (a === "set" && (ev.k === "v1" || ev.k === "shortPw")) {
-    if (ev.k === "v1") storage.format = ev.v === true ? "v1" : "v2";
-    else storage.devShortPw = ev.v === true;
-    await update({ format: storage.format === "v1" ? "v1" : "v2", dev: devSnapshot() });
+  } else if (a === "set" && ev.k === "shortPw") {
+    storage.devShortPw = ev.v === true;
+    await update({ dev: devSnapshot() });
   } else if (a === "engine" && ["auto", "c", "java"].includes(ev.v)) {
     storage.devArgonEngine = ev.v;
     applyDevKdf();

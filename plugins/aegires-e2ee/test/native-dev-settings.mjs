@@ -6,9 +6,9 @@ import { register } from "node:module";
 globalThis.__DEV__ = true; // a developer build (about.ts reads this when it loads)
 
 const hooks = `
-  const NAMES = ["blake2b","deflateSync","inflateSync","ghash","hkdf","pbkdf2Async","sha1","sha256"];
+  const NAMES = ["blake2b","ghash","hkdf","pbkdf2Async","sha1","sha256"];
   export async function resolve(spec, ctx, next) {
-    if (/^@noble\\//.test(spec) || spec === "fflate") return { url: "stub:" + spec, shortCircuit: true };
+    if (/^@noble\\//.test(spec)) return { url: "stub:" + spec, shortCircuit: true };
     return next(spec, ctx);
   }
   export async function load(url, ctx, next) {
@@ -55,7 +55,6 @@ assert.equal(snap.isDev, true);
 assert.ok(snap.dev, "developer data is part of the snapshot");
 assert.match(snap.dev.diagText, /^global key: NOT SET\nformat: v2 /);
 assert.match(snap.dev.diagText, /fast engine \(WebView\)/);
-assert.equal(dev().v1, false);
 assert.equal(dev().shortPw, false);
 assert.equal(dev().engine, "auto");
 assert.equal(dev().kdfOn, false);
@@ -73,12 +72,7 @@ ok("diag: sends fresh text");
 
 // switches
 await handleEvent({ t: "dev", a: "set", k: "v1", v: true });
-assert.equal(storage.format, "v1");
-assert.equal(last("format"), "v1", "the Format card follows the v1 switch");
-assert.equal(last("dev").v1, true);
-await handleEvent({ t: "dev", a: "set", k: "v1", v: false });
-assert.equal(storage.format, "v2");
-assert.equal(last("format"), "v2");
+assert.equal(storage.format, undefined, "the v1 switch is gone");
 await handleEvent({ t: "dev", a: "set", k: "shortPw", v: true });
 assert.equal(storage.devShortPw, true);
 assert.equal(last("dev").shortPw, true);
@@ -86,7 +80,7 @@ await handleEvent({ t: "dev", a: "set", k: "shortPw", v: false });
 assert.equal(storage.devShortPw, false);
 await handleEvent({ t: "dev", a: "set", k: "bogus", v: true });
 assert.equal(storage.bogus, undefined, "an unknown switch is refused");
-ok("switches: v1 format, short passwords");
+ok("switches: short passwords");
 
 // engine
 await handleEvent({ t: "dev", a: "engine", v: "java" });

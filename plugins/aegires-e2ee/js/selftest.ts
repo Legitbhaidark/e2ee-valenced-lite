@@ -1,17 +1,13 @@
 // On-device self-test (plugin settings > Self-test). It proves, on THIS phone's JS engine, that
-// everything both Aegires formats need gives the right bytes:
-//   v1: PBKDF2 + AES-256-GCM vectors made by Aegires' real Java code.
-//   v2: secure random, BigInt (Argon2), AES-128/192/256 + short GCM tags, HKDF, file chunks and
+// everything the Aegires v2 format needs gives the right bytes:
+//   secure random, BigInt (Argon2), AES-128/192/256 + short GCM tags, HKDF, file chunks and
 //       Argon2id itself (small-memory vectors; "Measure key derivation" runs the real 64 MiB one).
-import { deriveKey } from "./crypto/keys.ts";
-import { decryptBytes, decryptText, encryptBytes, encryptText } from "./crypto/wire.ts";
 import { decryptFile, decryptMessage, encryptFile, encryptMessage, messagePreset, presetFromIndex } from "./crypto/v2.ts";
 import { deriveMasterKey } from "./crypto/kdf2.ts";
 import { nativeCryptoBench } from "./engine/engine.ts";
 import { fromHex, toHex } from "./crypto/hex.ts";
 import { hasSecureRandom } from "./crypto/random.ts";
 import { fileModule } from "./native.ts";
-import { VECTORS_V1 } from "./selftest-vectors-v1.ts";
 import { CHANNEL_ID, FILE, KDF, MASTER_HEX, MESSAGES, SENDER_ID } from "./selftest-vectors.ts";
 
 export async function runSelfTest(): Promise<{ ok: boolean; lines: string[] }> {
@@ -28,23 +24,6 @@ export async function runSelfTest(): Promise<{ ok: boolean; lines: string[] }> {
   const rng = hasSecureRandom();
   check(rng, "secure random (crypto.getRandomValues) available");
   check(typeof (globalThis as any).BigInt === "function", "BigInt available");
-
-  // ---- v1
-  for (const v of VECTORS_V1) {
-    await guard("v1 " + v.label, async () => {
-      const key = await deriveKey(v.password);
-      check(decryptText(v.wire, key) === v.plain, "v1 decrypt Aegires vector: " + v.label);
-      if (rng) check(decryptText(encryptText(v.plain, key), key) === v.plain, "v1 round trip: " + v.label);
-    });
-  }
-  if (rng) {
-    await guard("v1 file", async () => {
-      const key = await deriveKey("selftest");
-      const bytes = new Uint8Array(4096).map((_, i) => (i * 31) & 255);
-      const back = decryptBytes(encryptBytes(bytes, key), key);
-      check(!!back && toHex(back) === toHex(bytes), "v1 attachment round trip");
-    });
-  }
 
   // ---- v2
   const master = fromHex(MASTER_HEX)!;

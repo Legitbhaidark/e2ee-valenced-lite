@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 
 const hooks = `
-  const NAMES = ["blake2b","deflateSync","inflateSync","ghash","hkdf","pbkdf2Async","sha1","sha256"];
+  const NAMES = ["blake2b","ghash","hkdf","pbkdf2Async","sha1","sha256"];
   export async function resolve(spec, ctx, next) {
-    if (/^@noble\\//.test(spec) || spec === "fflate") return { url: "stub:" + spec, shortCircuit: true };
+    if (/^@noble\\//.test(spec)) return { url: "stub:" + spec, shortCircuit: true };
     return next(spec, ctx);
   }
   export async function load(url, ctx, next) {
@@ -62,7 +62,7 @@ assert.match(snap.build, /release$/);
 ok("snapshot: keys, defaults, release build has no debug switch");
 
 // format card: presets, Padmé, built-in channels
-assert.equal(snap.format, "v2");
+assert.ok(!("format" in snap), "v1 is gone: no format field");
 assert.deepEqual(snap.presets.map((p) => p.index), PRESETS.map((p) => p.index));
 assert.ok(snap.presets.every((p) => p.label && p.max > 1000), "every preset has a label and a max length");
 assert.equal(snap.values.padme, true, "Padmé padding is on by default");
@@ -70,11 +70,6 @@ assert.deepEqual(snap.forced, Object.keys(FORCED_CHANNELS));
 const other = PRESETS.find((p) => p.index !== snap.preset);
 await handleEvent({ t: "setPreset", i: other.index });
 assert.equal(snapshot().preset, other.index);
-assert.equal(storage.format, "v2");
-storage.format = "v1";
-assert.equal(snapshot().format, "v1", "v1 shows as legacy");
-await handleEvent({ t: "setPreset", i: other.index });
-assert.equal(snapshot().format, "v2", "picking a preset switches back to v2");
 await handleEvent({ t: "setPreset", i: 999 });
 await handleEvent({ t: "setPreset", i: "x" });
 assert.equal(snapshot().preset, other.index, "an unknown preset is ignored");
@@ -82,7 +77,7 @@ await handleEvent({ t: "set", k: "padme", v: false });
 assert.equal(storage.padme, false);
 await handleEvent({ t: "set", k: "padme", v: true });
 assert.equal(snapshot().values.padme, true);
-ok("format card: preset choice, v1 label, Padmé, built-in channels list");
+ok("format card: preset choice, Padmé, built-in channels list");
 
 // per-chat card
 assert.equal(snap.chanId, "", "no chat open in the test");
@@ -189,7 +184,7 @@ for (const ev of [
   { t: "dev", a: "engine", v: "java" },
   { t: "dev", a: "kdfSave", mem: "1", passes: "1" },
 ]) await handleEvent(ev);
-assert.ok(!storage.devShortPw && !storage.devKdfOn && storage.format !== "v1", "developer events change nothing in a release build");
+assert.ok(!storage.devShortPw && !storage.devKdfOn && storage.format === undefined, "developer events change nothing in a release build");
 assert.notEqual(storage.devArgonEngine, "java");
 ok("release build: developer events are refused");
 

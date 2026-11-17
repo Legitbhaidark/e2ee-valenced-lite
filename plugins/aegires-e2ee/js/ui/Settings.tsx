@@ -108,7 +108,7 @@ function Fallback(props: { why: string; retry: () => void }) {
         <Card title="Diagnostics" hint="What the hooks are doing right now. Press Refresh after sending / receiving a message.">
           <Button label="Refresh" onPress={() => refresh()} />
           <Text selectable style={{ color: C.text, marginTop: 8, fontFamily: "monospace", fontSize: 12 }}>
-            {"global key: " + (hasGlobalKey() ? "set" : "NOT SET") + "\nformat: " + (storage.format === "v1" ? "v1" : "v2 " + getPreset().label) + (storageNote() ? "\nSTORAGE: " + storageNote() : "") + "\nown user id: " + (getSelfId() ? "known" : "NOT FOUND YET") + "\n" + diagLines().join("\n")}
+            {"global key: " + (hasGlobalKey() ? "set" : "NOT SET") + "\nformat: v2 " + getPreset().label + (storageNote() ? "\nSTORAGE: " + storageNote() : "") + "\nown user id: " + (getSelfId() ? "known" : "NOT FOUND YET") + "\n" + diagLines().join("\n")}
           </Text>
         </Card>
       ) : null}

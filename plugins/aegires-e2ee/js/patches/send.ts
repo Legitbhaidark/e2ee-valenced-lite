@@ -14,7 +14,7 @@ import { storage } from "../storage.ts";
 import { diag } from "../diag.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
 import { isEncryptedFileName } from "../crypto/files.ts";
-import { LOCK, getSendKey, hasGlobalKey, isEncryptionOn } from "../state.ts";
+import { LOCK, getSendKeyV2, hasGlobalKey, isEncryptionOn } from "../state.ts";
 import { BLOCK, captionSizeTag, prepare, uploadFileName } from "../outgoing.ts";
 import { wasEncrypted } from "./receive.ts";
 import { interceptTyped } from "../commands.ts";
@@ -64,7 +64,7 @@ export function installSendPatch(): () => void {
           // The size tag must ride along even when there is no caption: Aegires reads the picture size
           // only from it, so an image sent without text used to arrive without a size.
           const out = prepare(channelId, tag ? tag + (typeof msg.content === "string" ? msg.content : "") : msg.content);
-          diag.lastSend = `on=${isEncryptionOn(channelId)} key=${!!getSendKey(channelId)} -> ${out === BLOCK ? "BLOCKED" : out === null ? "sent unchanged" : "encrypted"}`;
+          diag.lastSend = `on=${isEncryptionOn(channelId)} key=${!!getSendKeyV2(channelId)} -> ${out === BLOCK ? "BLOCKED" : out === null ? "sent unchanged" : "encrypted"}`;
           if (storage.debug) console.log("[aegires-e2ee] sendMessage", channelId, diag.lastSend, opts ? Object.keys(opts) : "");
           if (out === BLOCK) return Promise.resolve();
           if (out !== null) msg.content = out;

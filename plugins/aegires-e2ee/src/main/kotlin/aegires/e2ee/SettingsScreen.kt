@@ -245,7 +245,7 @@ internal object SettingsScreen {
     private fun formatCard(a: Activity): View {
         val c = card(a, "")
         formatTitle = c.getChildAt(0) as TextView
-        c.addView(label(a, "v2 is the current Aegires format: Argon2id keys, a fresh key per message and per file bound to the chat and the sender. Old v1 messages are always still decrypted.", MUTED, 14f, false), top(a, 4f))
+        c.addView(label(a, "v2 is the current Aegires format: Argon2id keys, a fresh key per message and per file bound to the chat and the sender. Old v1 messages are no longer supported.", MUTED, 14f, false), top(a, 4f))
         presetButtons.clear()
         val presets = state.optJSONArray("presets") ?: JSONArray()
         for (i in 0 until presets.length()) {
@@ -253,7 +253,7 @@ internal object SettingsScreen {
             val index = p.getInt("index")
             val b = button(a, "", ACCENT)
             b.setOnClickListener {
-                state.put("format", "v2").put("preset", index)
+                state.put("preset", index)
                 events.add(JSONObject().put("t", "setPreset").put("i", index).toString())
                 refreshFormatCard()
             }
@@ -266,12 +266,11 @@ internal object SettingsScreen {
     }
 
     private fun refreshFormatCard() {
-        val v1 = state.optString("format", "v2") == "v1"
         val cur = state.optInt("preset", -1)
         val curLabel = presetButtons.firstOrNull { it.index == cur }?.label ?: ""
-        formatTitle?.text = "Format: " + (if (v1) "v1 (legacy)" else "v2, $curLabel")
+        formatTitle?.text = "Format: v2, $curLabel"
         for (p in presetButtons) {
-            p.button.text = (if (!v1 && p.index == cur) "✔ " else "") + "v2 " + p.label + "  (max " + p.max + " bytes)"
+            p.button.text = (if (p.index == cur) "✔ " else "") + "v2 " + p.label + "  (max " + p.max + " bytes)"
         }
     }
 
@@ -437,7 +436,7 @@ internal object SettingsScreen {
         c.addView(label(a, "Developer: " + state.optString("developer"), TEXT, 15f, false), top(a, 8f))
         c.addView(label(a, "Version: " + state.optString("version"), TEXT, 15f, false), top(a, 4f))
         c.addView(label(a, "Build number: " + state.optString("build"), TEXT, 15f, false), top(a, 4f))
-        c.addView(label(a, "Message format: Aegires v2 (v1 read-only)", MUTED, 14f, false), top(a, 8f))
+        c.addView(label(a, "Message format: Aegires v2", MUTED, 14f, false), top(a, 8f))
         c.addView(label(a, "File format: Aegires v2", MUTED, 14f, false), top(a, 4f))
         c.addView(label(a, "Native module: " + state.optString("native"), MUTED, 14f, false), top(a, 4f))
         c.addView(label(a, "Argon2id engine: " + NativeArgon2.status(), MUTED, 14f, false), top(a, 4f))

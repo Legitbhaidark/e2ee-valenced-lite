@@ -27,9 +27,9 @@ import org.json.JSONObject
  * and the JS side runs the actions (they need the JS crypto and storage) and pushes the results back.
  *
  * Events: {"t":"dev","a":"diag"|"selftest"|"measure"}  {"a":"bench","mib":<1|8|32|64>,"js":bool}
- *         {"a":"set","k":"v1"|"shortPw","v":bool}  {"a":"engine","v":"auto"|"c"|"java"}
+ *         {"a":"set","k":"shortPw","v":bool}  {"a":"engine","v":"auto"|"c"|"java"}
  *         {"a":"kdfOn","v":bool}  {"a":"kdfSave","mem":<text>,"passes":<text>}
- * State it reads: dev{diagText,v1,shortPw,engine,kdfOn,kdfMem,kdfPasses,maxMem,maxPasses}, devBusy,
+ * State it reads: dev{diagText,shortPw,engine,kdfOn,kdfMem,kdfPasses,maxMem,maxPasses}, devBusy,
  * devLines (self-test / measure result), devBench (benchmark result).
  */
 internal object DevScreen {
@@ -47,7 +47,6 @@ internal object DevScreen {
     private val mibButtons = ArrayList<Button>()
     private var benchMib = 8
     private var benchJs = false
-    private var v1Switch: Switch? = null
     private var shortSwitch: Switch? = null
     private var kdfSwitch: Switch? = null
     private val engines = listOf("auto", "c", "java")
@@ -107,7 +106,6 @@ internal object DevScreen {
             for (b in runButtons) b.isEnabled = busy.isEmpty()
             fillLines(testBox, S.state.optJSONArray("devLines")) { it.startsWith("FAIL") }
             fillLines(benchBox, S.state.optJSONArray("devBench")) { it.contains("MISMATCH") }
-            v1Switch?.isChecked = dv.optBoolean("v1", false)
             shortSwitch?.isChecked = dv.optBoolean("shortPw", false)
             kdfSwitch?.isChecked = dv.optBoolean("kdfOn", false)
             val engine = dv.optString("engine", "auto")
@@ -214,9 +212,6 @@ internal object DevScreen {
         val c = S.card(a, "Developer options")
         val dv = dev()
         c.addView(S.label(a, "For testing only. These options make the client less secure.", S.MUTED, 14f, false), S.top(a, 4f))
-        v1Switch = switchRow(a, c, "Use the v1 legacy format for sending (AES-256-GCM, PBKDF2). Older and less secure; only for talking to old Aegires versions") { v ->
-            send(event("set").put("k", "v1").put("v", v))
-        }
         shortSwitch = switchRow(a, c, "Allow passwords as short as 1 character instead of 8. Makes the client less secure - proceed with caution") { v ->
             send(event("set").put("k", "shortPw").put("v", v))
         }

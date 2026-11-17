@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 
 const hooks = `
-  const NAMES = ["blake2b","deflateSync","inflateSync","ghash","hkdf","pbkdf2Async","sha1","sha256"];
+  const NAMES = ["blake2b","ghash","hkdf","pbkdf2Async","sha1","sha256"];
   export async function resolve(spec, ctx, next) {
-    if (/^@noble\\//.test(spec) || spec === "fflate") return { url: "stub:" + spec, shortCircuit: true };
+    if (/^@noble\\//.test(spec)) return { url: "stub:" + spec, shortCircuit: true };
     if (/\\/outgoing\\.ts$/.test(spec)) return { url: "stub:outgoing", shortCircuit: true };
     return next(spec, ctx);
   }
