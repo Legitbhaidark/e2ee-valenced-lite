@@ -8,8 +8,7 @@
       "description": "End-to-end encryption for Discord on Valenced, compatible with the Aegires Android app. Encrypts and decrypts text messages, images, GIFs, videos and files (up to 1 GiB) with a shared password, using Aegires v2 (Argon2id, AES-GCM). Per-chat on/off with /e2ee, a lock icon next to decrypted messages, a native video player, and a native module (C Argon2id with Kotlin/Java fallback) that makes key derivation much faster than plain JS.",
       "author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
       "channels": {
-        "latest": "0.1.30",
-        "beta": "0.1.31-dev3",
+        "latest": "0.1.31",
         "lts": "0.1.27"
       },
       "versions": {
@@ -745,6 +744,19 @@
           "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31-dev3.zip",
           "sha256": "a88ea8609790f5951da7d3329258a8176a53c5115cfc6fcbe9de47a35b4628f4",
           "size": 187956,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "0.1.31": {
+          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31.zip",
+          "sha256": "d654495dc4d5cf952c26ed58a3401c79f3e61dc2643428b78ce71529840c363c",
+          "size": 163489,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
