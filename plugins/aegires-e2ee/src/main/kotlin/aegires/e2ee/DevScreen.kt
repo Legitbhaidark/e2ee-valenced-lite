@@ -155,6 +155,7 @@ internal object DevScreen {
         val scroll = ScrollView(a)
         scroll.addView(col)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        S.keyboardAware(a, root)
         return root
     }
 
@@ -192,12 +193,12 @@ internal object DevScreen {
 
     private fun benchCard(a: Activity): View {
         val c = S.card(a, "Crypto benchmark")
-        c.addView(S.label(a, "Times Argon2id, HKDF-SHA256 and AES-256-GCM on plain JS, Kotlin/Java and the C library. Native results are the median of 3 runs, timed inside the native half. The size below is for Argon2id. Plain JS is slow (about 0.6 s per MiB for Argon2id, and the AES test takes a while), so it is off by default.", S.MUTED, 14f, false), S.top(a, 4f))
+        c.addView(S.label(a, "Times Argon2id (Kotlin/Java and the C library only - there is no JS Argon2id), HKDF-SHA256 and AES-256-GCM. Native results are the median of 3 runs, timed inside the native half. The size below is for Argon2id. Optionally the plain JS HKDF and AES (which the plugin still uses for messages) are timed too; that is slow, so it is off by default.", S.MUTED, 14f, false), S.top(a, 4f))
         c.addView(chips(a, listOf("1 MiB", "8 MiB", "32 MiB", "64 MiB (real)"), mibButtons) { i ->
             benchMib = mibs[i]
             refresh()
         }, S.top(a, 8f))
-        switchRow(a, c, "Include plain JS (slow)") { checked -> benchJs = checked }
+        switchRow(a, c, "Also time plain JS HKDF + AES (slow)") { checked -> benchJs = checked }
         val run = S.button(a, "Run crypto benchmark", S.ACCENT)
         run.setOnClickListener { send(event("bench").put("mib", benchMib).put("js", benchJs)) }
         c.addView(run, S.top(a, 10f))

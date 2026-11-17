@@ -169,7 +169,32 @@ internal object SettingsScreen {
         val scroll = ScrollView(a)
         scroll.addView(col)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        keyboardAware(a, root)
         return root
+    }
+
+    /**
+     * Keeps the text box you are typing in above the keyboard. Full-screen dialogs often ignore
+     * adjustResize, so the keyboard would cover the box: measure how much of the screen it takes and
+     * pad the bottom of the screen by that much (when the system already resized the window, nothing is added).
+     */
+    internal fun keyboardAware(a: Activity, root: View) {
+        val r = android.graphics.Rect()
+        var last = -1
+        root.viewTreeObserver.addOnGlobalLayoutListener {
+            root.getWindowVisibleDisplayFrame(r)
+            val screenH = root.rootView.height
+            val kb = (screenH - r.bottom).coerceAtLeast(0)
+            val pad = if (kb > screenH / 6) kb else 0
+            if (pad != last) {
+                last = pad
+                root.setPadding(root.paddingLeft, root.paddingTop, root.paddingRight, pad)
+                root.postDelayed({
+                    val f = root.findFocus()
+                    if (f is EditText) f.requestRectangleOnScreen(android.graphics.Rect(0, 0, f.width, f.height + dp(a, 24f)), false)
+                }, 120)
+            }
+        }
     }
 
     private fun keyCard(a: Activity): View {
