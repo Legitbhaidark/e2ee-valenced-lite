@@ -59,30 +59,21 @@ val aegiresNative = plugin {
             NativeOps.argon2idWith(engine, password, salt, passes, memoryKiB, outLen)
         }
 
-        // Benchmark: runs one engine a few times and returns "<hash head>;<ns>,<ns>,...".
-        registerNativeAsyncMethod("aegires.argon2bench") { rawArgs ->
+        // Settings > Crypto benchmark: the whole report text. The JS side adds only its own plain JS times
+        // (10 strings: memory in MiB, then time ms / output head / reason for Argon2id, HKDF and AES).
+        registerNativeAsyncMethod("aegires.cryptobench") { rawArgs ->
             val args = rawArgs.asDelegate()
-            val engine: String by args.string()
-            val passes: String by args.string()
-            val memoryKiB: String by args.string()
-            val runs: String by args.string()
-            NativeOps.argon2Bench(engine, passes, memoryKiB, runs)
-        }
-
-        // Benchmarks: "<hash head>;<ns>,<ns>,..." timed inside the native half.
-        registerNativeAsyncMethod("aegires.hkdfbench") { rawArgs ->
-            val args = rawArgs.asDelegate()
-            val engine: String by args.string()
-            val iterations: String by args.string()
-            val runs: String by args.string()
-            NativeOps.hkdfBench(engine, iterations, runs)
-        }
-
-        registerNativeAsyncMethod("aegires.aesbench") { rawArgs ->
-            val args = rawArgs.asDelegate()
-            val iterations: String by args.string()
-            val runs: String by args.string()
-            NativeOps.aesBench(iterations, runs)
+            val memMiB: String by args.string()
+            val argonMs: String by args.string()
+            val argonHead: String by args.string()
+            val argonWhy: String by args.string()
+            val hkdfMs: String by args.string()
+            val hkdfHead: String by args.string()
+            val hkdfWhy: String by args.string()
+            val aesMs: String by args.string()
+            val aesHead: String by args.string()
+            val aesWhy: String by args.string()
+            CryptoBench.report(memMiB.toInt(), arrayOf(argonMs, argonHead, argonWhy, hkdfMs, hkdfHead, hkdfWhy, aesMs, aesHead, aesWhy))
         }
 
         registerNativeMethod("aegires.argon2engine") { _ -> NativeOps.argon2Engine() }

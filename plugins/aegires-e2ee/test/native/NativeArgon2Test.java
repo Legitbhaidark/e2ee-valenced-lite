@@ -1,4 +1,5 @@
 import aegires.e2ee.NativeArgon2;
+import aegires.e2ee.CryptoBench;
 import aegires.e2ee.NativeOps;
 import java.io.File;
 import java.util.Base64;
@@ -34,6 +35,12 @@ public class NativeArgon2Test {
         check(threw, "engine \"c\" refuses when the library is not loaded");
         check(NativeOps.argon2idWith("auto", pwB, saltB, "1", "64", "32").equals(NativeOps.argon2idWith("java", pwB, saltB, "1", "64", "32")), "auto falls back to Java, same bytes");
 
+        String[] noJs = {"-1", "", "plain JS is off", "-1", "", "plain JS is off", "-1", "", "plain JS is off"};
+        String rep0 = CryptoBench.report(1, noJs);
+        check(rep0.contains("Native: skipped (C library not loaded") && rep0.contains("Java: ") && rep0.contains("Java/Conscrypt: "), "benchmark report without the C library skips C, still runs Java");
+        check(rep0.contains("Plain JS: skipped (plain JS is off)") && rep0.contains("AES=Java"), "benchmark report: JS off is shown as skipped");
+        check(CryptoBench.fmtMs(0.5).equals("500 us") && CryptoBench.fmtMs(1.234).equals("1.23 ms") && CryptoBench.fmtMs(85.31).equals("85.3 ms") && CryptoBench.fmtMs(1250).equals("1.25 s") && CryptoBench.fmtMs(125000).equals("2 min 5 s"), "fmtMs formats us / ms / s / min");
+
         // 2. the real library
         check(NativeArgon2.load(cl, dir, new String[] {"nope", "host"}), "library extracted, loaded and passed the Java cross-check");
         check(NativeArgon2.status().equals("c:host"), "status: " + NativeArgon2.status());
@@ -67,6 +74,12 @@ public class NativeArgon2Test {
         check(hc.split(";")[0].equals(hj.split(";")[0]), "hkdf bench: same output from c and java: " + hc.split(";")[0]);
         String ab = NativeOps.aesBench("5", "2");
         check(ab.split(";")[0].length() == 16 && ab.split(";")[1].split(",").length == 2, "aes bench runs: " + ab);
+
+        String headJ = NativeOps.argon2Bench("java", "3", "1024", "1").split(";")[0];
+        String repC = CryptoBench.report(1, new String[]{"12.5", headJ, "", "-1", "", "off", "-1", "", "off"});
+        check(repC.contains("Native: ") && repC.contains("vs Java") && repC.contains("vs JS") && repC.contains("(match)") && !repC.contains("MISMATCH") && repC.contains("Argon2id=native HKDF=native") && repC.contains("C library ("), "benchmark report with C: match, speedups, status line");
+        String repBad = CryptoBench.report(1, new String[]{"12.5", "0000000000000000", "", "-1", "", "off", "-1", "", "off"});
+        check(repBad.contains("Plain JS: 12.5 ms (MISMATCH!)"), "benchmark report flags a wrong plain JS answer");
 
         // 4. refused parameters give null (not a crash), and the C output is the exact length asked for
         check(NativeArgon2.hash(new byte[1], new byte[4], 1, 64, 32) == null, "short salt: null, no crash");

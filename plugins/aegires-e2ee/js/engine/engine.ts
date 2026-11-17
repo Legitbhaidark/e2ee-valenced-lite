@@ -59,27 +59,14 @@ async function nativeArgon2(password: Uint8Array, salt: Uint8Array, t: number, m
   return typeof out === "string" ? base64Decode(out) : null;
 }
 
-/** "<hash head>;<ns>,<ns>,..." from the native half -> timings in ms and the first 8 output bytes (hex). */
-function parseBench(out: unknown): { ms: number[]; head: string } {
-  if (typeof out !== "string" || out.indexOf(";") < 0) throw new Error("unexpected benchmark reply");
-  const [head, times] = out.split(";");
-  return { head, ms: times.split(",").map((n) => Number(n) / 1e6) };
-}
-
 /**
- * Benchmarks of the native half. All are timed inside it (the bridge is not in the numbers) and throw
- * with the reason when an engine is not available ("c" without the C library, or an old native half).
+ * Settings > Crypto benchmark. The native half times the Java and C engines and writes the whole report;
+ * `js` is the plain JS result for Argon2id, HKDF and AES in turn: [ms ("-1" = not run), output head, reason].
  */
-export async function nativeBench(engine: "c" | "java", t: number, mKiB: number, runs: number): Promise<{ ms: number[]; head: string }> {
-  return parseBench(await callNative("argon2bench", [engine, String(t), String(mKiB), String(runs)], 120000));
-}
-
-export async function nativeHkdfBench(engine: "c" | "java", iterations: number, runs: number): Promise<{ ms: number[]; head: string }> {
-  return parseBench(await callNative("hkdfbench", [engine, String(iterations), String(runs)], 120000));
-}
-
-export async function nativeAesBench(iterations: number, runs: number): Promise<{ ms: number[]; head: string }> {
-  return parseBench(await callNative("aesbench", [String(iterations), String(runs)], 120000));
+export async function nativeCryptoBench(memMiB: number, js: string[]): Promise<string> {
+  const out = await callNative("cryptobench", [String(memMiB), ...js], 300000);
+  if (typeof out !== "string") throw new Error("unexpected benchmark reply");
+  return out;
 }
 
 /** Real-size offload: records success or the exact failure in Diagnostics, then lets the JS code take over on failure. */
