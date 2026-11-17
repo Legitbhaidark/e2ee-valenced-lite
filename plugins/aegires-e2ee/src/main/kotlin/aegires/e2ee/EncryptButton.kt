@@ -2,6 +2,7 @@ package aegires.e2ee
 
 import android.app.Activity
 import android.app.Application
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Bundle
 import android.graphics.Color
@@ -11,6 +12,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
 import java.lang.ref.WeakReference
@@ -41,7 +43,11 @@ internal object EncryptButton {
     private var searchIcon: WeakReference<View>? = null
     private var state = "hide"
     private var placing = false
+    private var why = "not started" // why the button is shown or hidden right now (Diagnostics)
     private val taps = AtomicInteger(0)
+
+    /** One line for Diagnostics: shown, or why it is hidden. */
+    fun status(): String = why
 
     /** Presses since the last call. */
     fun takeTaps(): Int = taps.getAndSet(0)
@@ -51,6 +57,7 @@ internal object EncryptButton {
             try {
                 state = if (newState == "on" || newState == "off" || newState == "locked") newState else "hide"
                 if (state == "hide") {
+                    why = "hidden: switched off or no chat open"
                     detach()
                     return@runOnUiThread
                 }
@@ -226,9 +233,23 @@ internal object EncryptButton {
             val decor = a.window.decorView as? ViewGroup ?: return
             val icon = findSearchIcon(a, decor)
             if (icon == null) {
+                why = "hidden: no search icon on screen"
                 tv.visibility = View.INVISIBLE
                 return
             }
+            // Only on the chat screen itself: not under Discord's full-screen image viewer (or any other
+            // screen laid over the chat), and not on the search screen.
+            if (isCovered(icon, decor, a)) {
+                why = "hidden: a full-screen view covers the chat header"
+                tv.visibility = View.INVISIBLE
+                return
+            }
+            if (headerHasTextInput(decor, a)) {
+                why = "hidden: text input in the header (search screen)"
+                tv.visibility = View.INVISIBLE
+                return
+            }
+            why = "shown"
             tv.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
             val iconLoc = IntArray(2)
             val decorLoc = IntArray(2)
@@ -245,6 +266,69 @@ internal object EncryptButton {
         } finally {
             placing = false
         }
+    }
+
+    /**
+     * True when something drawn AFTER the icon's screen covers (nearly) the whole display with an opaque
+     * background: Discord's image viewer, a full-screen dialog or another screen pushed over the chat.
+     * Discord keeps the chat underneath in the view tree, so its search icon still looks "visible".
+     * Views are drawn in child order, so only later siblings of the icon's ancestors can lie on top of it.
+     */
+    private fun isCovered(icon: View, decor: ViewGroup, a: Activity): Boolean {
+        val w = a.resources.displayMetrics.widthPixels
+        val h = a.resources.displayMetrics.heightPixels
+        val ir = Rect()
+        if (!icon.getGlobalVisibleRect(ir)) return false
+        val cx = ir.centerX()
+        val cy = ir.centerY()
+        var child: View = icon
+        var parent = child.parent as? ViewGroup
+        while (parent != null) {
+            val idx = parent.indexOfChild(child)
+            for (i in idx + 1 until parent.childCount) {
+                if (coversScreen(parent.getChildAt(i), w, h, cx, cy, 3)) return true
+            }
+            if (parent === decor) break
+            child = parent
+            parent = parent.parent as? ViewGroup
+        }
+        return false
+    }
+
+    private fun coversScreen(v: View, w: Int, h: Int, cx: Int, cy: Int, depth: Int): Boolean {
+        if (v === view || v.visibility != View.VISIBLE || v.alpha < 0.5f) return false
+        val bg = v.background
+        if (bg != null && bg.opacity == PixelFormat.OPAQUE) {
+            val r = Rect()
+            // It must lie over the icon itself (the chat's own content area starts below the header) and be screen-sized.
+            if (v.getGlobalVisibleRect(r) && r.contains(cx, cy) && r.width() * 10 >= w * 9 && r.height() * 10 >= h * 7) return true
+        }
+        if (depth > 0 && v is ViewGroup) {
+            for (i in 0 until v.childCount) if (coversScreen(v.getChildAt(i), w, h, cx, cy, depth - 1)) return true
+        }
+        return false
+    }
+
+    /** The search screen has its input at the top; the chat screen's input is at the bottom. */
+    private fun headerHasTextInput(root: ViewGroup, a: Activity): Boolean {
+        val limit = dp(a, HEADER_DP.toFloat())
+        fun scan(v: View, offY: Int): Boolean {
+            if (v === view || v.visibility != View.VISIBLE) return false
+            if (v is EditText && v.isShown) {
+                val r = Rect()
+                if (v.getGlobalVisibleRect(r) && r.top < limit) return true
+            }
+            if (v is ViewGroup) {
+                for (i in 0 until v.childCount) {
+                    val c = v.getChildAt(i)
+                    val top = offY + c.top - v.scrollY
+                    if (top > limit) continue
+                    if (scan(c, top)) return true
+                }
+            }
+            return false
+        }
+        return scan(root, 0)
     }
 
     private fun findSearchIcon(a: Activity, decor: ViewGroup): View? {

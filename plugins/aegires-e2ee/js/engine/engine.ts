@@ -192,6 +192,12 @@ export async function nativeEncButton(state: "on" | "off" | "locked" | "hide"): 
   await callNative("encbutton", [state], 3000);
 }
 
+/** Why the header button is shown or hidden (Diagnostics). */
+export async function nativeEncButtonStatus(): Promise<string> {
+  const out = await callNative("encbuttonstatus", [], 3000);
+  return typeof out === "string" ? out : String(out ?? "");
+}
+
 /** Presses of the header button since the last call. */
 export async function nativeEncButtonTaps(): Promise<number> {
   const out = await callNative("encbuttontaps", [], 3000);

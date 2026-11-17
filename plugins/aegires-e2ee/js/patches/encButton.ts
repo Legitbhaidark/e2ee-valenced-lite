@@ -8,7 +8,7 @@
 //   locked  a chat with a built-in key: always on, a press only explains that
 //   hide    no chat open, the native half is missing, or "E2EE button" is switched off in settings
 // A press turns encryption on/off for THIS chat only, the same switch as "/e2ee on|off".
-import { nativeEncButton, nativeEncButtonTaps, nativeReady } from "../engine/engine.ts";
+import { nativeEncButton, nativeEncButtonStatus, nativeEncButtonTaps, nativeReady } from "../engine/engine.ts";
 import { selectedChannelId } from "../patch.ts";
 import { storage } from "../storage.ts";
 import { diag } from "../diag.ts";
@@ -71,7 +71,8 @@ export function installEncButton(): () => void {
         last = want;
         lastSentAt = now;
       }
-      diag.installed["encryption button"] = `${want}${channelId ? "" : " (no chat open)"}`;
+      const why = want === "hide" ? "" : await nativeEncButtonStatus().catch(() => "");
+      diag.installed["encryption button"] = `${want}${channelId ? "" : " (no chat open)"}${why ? " - " + why : ""}`;
     } catch (e) {
       diag.installed["encryption button"] = "native call failed: " + String((e as any)?.message ?? e).split("\n")[0].slice(0, 60);
     } finally {

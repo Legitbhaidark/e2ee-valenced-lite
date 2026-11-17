@@ -231,6 +231,9 @@ val aegiresNative = plugin {
             "ok"
         }
 
+        // Why the button is shown or hidden (for Diagnostics).
+        registerNativeMethod("aegires.encbuttonstatus") { _ -> EncryptButton.status() }
+
         // How many times the button was pressed since the last call.
         registerNativeMethod("aegires.encbuttontaps") { _ -> EncryptButton.takeTaps().toString() }
 
