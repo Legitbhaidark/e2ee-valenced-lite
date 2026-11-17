@@ -4,6 +4,12 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.31 - stable
+- Dropped the v1 message format completely. v1 messages are no longer read or sent; stored v1 keys are deleted on start.
+- Setting a key is faster (no PBKDF2 step any more).
+- Removed the `fflate` dependency and the v1 developer switch.
+- Release notes now come from this changelog.
+
 ## 0.1.31-dev3
 - Release notes now come from this file: the section for the version being published becomes the GitHub Release text.
 
