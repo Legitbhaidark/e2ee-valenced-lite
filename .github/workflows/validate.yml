@@ -53,6 +53,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN }} # For Gradle to download the API dependency. Read the warning above about this token.
 
+      - name: Upload plugin zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-zips-pr${{ github.event.pull_request.number }}
+          path: build/dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Generate index from built artifacts
         run: |
           bun run generate-index \

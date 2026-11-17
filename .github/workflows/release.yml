@@ -65,6 +65,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN }} # For Gradle to download the API dependency.
 
+      # The zips are also kept on the run page, so anyone with repo access can grab one without a Release.
+      - name: Upload plugin zips
+        if: steps.plan.outputs.count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-zips-${{ github.ref_name }}-run${{ github.run_number }}
+          path: build/dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish to the pool
         if: steps.plan.outputs.count != '0'
         run: .github/scripts/publish-pool.sh
