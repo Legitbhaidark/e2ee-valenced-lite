@@ -20,7 +20,7 @@ export const diag = {
   attEncrypted: 0,
   lastAttError: "",
   uploadEvents: [] as string[], // upload-related Flux event types seen
-  engine: "not in this build (JS crypto only)", // WebView crypto engine state
+  engine: "native unavailable (no Argon2id)", // WebView crypto engine state
   engineJobs: 0, // operations done by the engine
   engineFallbacks: 0, // operations that fell back to the JS code
   engineLastError: "",
@@ -47,7 +47,7 @@ export function diagLines(): string[] {
     `upload events: ${diag.uploadEvents.join(", ") || "none"}`,
     ...(diag.lastAttError ? [`last attachment error: ${diag.lastAttError}`] : []),
     `fast engine (WebView): ${diag.engine} [build ${BUILD_ID}]`,
-    `engine jobs / JS fallbacks: ${diag.engineJobs} / ${diag.engineFallbacks}`,
+    `engine jobs / failures: ${diag.engineJobs} / ${diag.engineFallbacks}`,
     ...(diag.engineLastError ? [`last engine error: ${diag.engineLastError}`] : []),
   ];
 }

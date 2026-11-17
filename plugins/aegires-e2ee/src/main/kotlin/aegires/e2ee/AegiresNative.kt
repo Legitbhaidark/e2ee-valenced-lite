@@ -59,30 +59,21 @@ val aegiresNative = plugin {
             NativeOps.argon2idWith(engine, password, salt, passes, memoryKiB, outLen)
         }
 
-        // Benchmark: runs one engine a few times and returns "<hash head>;<ns>,<ns>,...".
-        registerNativeAsyncMethod("aegires.argon2bench") { rawArgs ->
+        // Settings > Crypto benchmark: the whole report text. The JS side adds only its own plain JS times
+        // (10 strings: memory in MiB, then time ms / output head / reason for Argon2id, HKDF and AES).
+        registerNativeAsyncMethod("aegires.cryptobench") { rawArgs ->
             val args = rawArgs.asDelegate()
-            val engine: String by args.string()
-            val passes: String by args.string()
-            val memoryKiB: String by args.string()
-            val runs: String by args.string()
-            NativeOps.argon2Bench(engine, passes, memoryKiB, runs)
-        }
-
-        // Benchmarks: "<hash head>;<ns>,<ns>,..." timed inside the native half.
-        registerNativeAsyncMethod("aegires.hkdfbench") { rawArgs ->
-            val args = rawArgs.asDelegate()
-            val engine: String by args.string()
-            val iterations: String by args.string()
-            val runs: String by args.string()
-            NativeOps.hkdfBench(engine, iterations, runs)
-        }
-
-        registerNativeAsyncMethod("aegires.aesbench") { rawArgs ->
-            val args = rawArgs.asDelegate()
-            val iterations: String by args.string()
-            val runs: String by args.string()
-            NativeOps.aesBench(iterations, runs)
+            val memMiB: String by args.string()
+            val argonMs: String by args.string()
+            val argonHead: String by args.string()
+            val argonWhy: String by args.string()
+            val hkdfMs: String by args.string()
+            val hkdfHead: String by args.string()
+            val hkdfWhy: String by args.string()
+            val aesMs: String by args.string()
+            val aesHead: String by args.string()
+            val aesWhy: String by args.string()
+            CryptoBench.report(memMiB.toInt(), arrayOf(argonMs, argonHead, argonWhy, hkdfMs, hkdfHead, hkdfWhy, aesMs, aesHead, aesWhy))
         }
 
         registerNativeMethod("aegires.argon2engine") { _ -> NativeOps.argon2Engine() }
@@ -213,15 +204,37 @@ val aegiresNative = plugin {
             FileOps.progress(outPath)
         }
 
-        // Full-screen playback of a decrypted video or audio file, with a title for audio. Returns "ok".
+        // Playback of a decrypted video or audio file: in the chat when mode is "inline", else full screen. Returns "ok".
         registerNativeMethod("aegires.playmedia") { rawArgs ->
             val args = rawArgs.asDelegate()
             val path: String by args.string()
             val title: String by args.string()
+            val mode: String by args.string() // "inline" = play in the chat (video and audio), anything else = full screen
+            val vw: String by args.string() // the picture's pixel size, to pick the right view (0 = unknown)
+            val vh: String by args.string()
             if (!VideoPlayer.allowed(path)) throw IllegalArgumentException("path not allowed")
-            withAppActivity { VideoPlayer.show(it, path, title) }
+            withAppActivity {
+                InlineVideo.note("not tried: full-screen mode")
+                if (mode == "inline" && VideoPlayer.isAudio(path)) {
+                    InlineAudio.start(it, path, title, vw.toIntOrNull() ?: 0, vh.toIntOrNull() ?: 0)
+                } else if (mode == "inline") {
+                    InlineVideo.start(it, path, title, vw.toIntOrNull() ?: 0, vh.toIntOrNull() ?: 0)
+                } else {
+                    VideoPlayer.show(it, path, title)
+                }
+            }
             "ok"
         }
+
+        // The spot of the last touch is needed to find the picture a video plays on. The JS side calls
+        // this once the app's UI is up (the activity may not exist yet while the plugin starts).
+        registerNativeMethod("aegires.touchspy") { _ ->
+            withAppActivity { TouchSpy.install(it) }
+            "ok"
+        }
+
+        // What the in-chat player did for the last tap, for Diagnostics.
+        registerNativeMethod("aegires.inlinestatus") { _ -> InlineVideo.status() }
 
         // The "E2EE" on/off button next to the search icon. State: on | off | locked | hide. Returns "ok".
         registerNativeMethod("aegires.encbutton") { rawArgs ->
@@ -230,6 +243,9 @@ val aegiresNative = plugin {
             withAppActivity { EncryptButton.set(it, state) }
             "ok"
         }
+
+        // Why the button is shown or hidden (for Diagnostics).
+        registerNativeMethod("aegires.encbuttonstatus") { _ -> EncryptButton.status() }
 
         // How many times the button was pressed since the last call.
         registerNativeMethod("aegires.encbuttontaps") { _ -> EncryptButton.takeTaps().toString() }
@@ -240,6 +256,23 @@ val aegiresNative = plugin {
             val url: String by args.string()
             LinkPreview.fetch(url)
         }
+
+        // The settings screen (SettingsScreen.kt): open it, change what it shows, and poll what the user did.
+        registerNativeMethod("aegires.settingsopen") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val json: String by args.string()
+            withAppActivity { SettingsScreen.show(it, json) }
+            "ok"
+        }
+
+        registerNativeMethod("aegires.settingsupdate") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val json: String by args.string()
+            SettingsScreen.update(json)
+            "ok"
+        }
+
+        registerNativeMethod("aegires.settingstake") { _ -> SettingsScreen.take() }
 
         // Full-screen playback of a decrypted video file (path under .../aegires/). Returns "ok".
         registerNativeMethod("aegires.playvideo") { rawArgs ->
@@ -252,7 +285,11 @@ val aegiresNative = plugin {
     }
 
     stop {
+        SettingsScreen.close()
         VideoPlayer.close()
+        InlineVideo.close()
+        InlineAudio.close()
+        TouchSpy.shutdown()
         EncryptButton.shutdown()
         log.i("Aegires native crypto unloaded")
     }

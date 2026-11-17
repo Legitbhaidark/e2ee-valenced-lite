@@ -81,7 +81,7 @@ function install(behavior = {}) {
   assert.equal(await startNative(), false);
   assert.match(diag.installed["native crypto"], /self-check mismatch/);
   calls.length = 0;
-  try { await deriveMasterKey("x", { memoryKiB: 64 }); } catch {} // JS fallback may need @noble, absent in some sandboxes
+  await assert.rejects(deriveMasterKey("x", { memoryKiB: 64 }), /needs the native half/);
   assert.equal(calls.length, 0);
   ok("wrong native result at the self-check: native is not used for real keys");
 }
@@ -90,11 +90,11 @@ function install(behavior = {}) {
 {
   const calls = install({ reject: "Call failed: method not found" });
   assert.equal(await startNative(), false);
-  assert.match(diag.installed["native crypto"], /not used - JS crypto/);
+  assert.match(diag.installed["native crypto"], /UNAVAILABLE/);
   calls.length = 0;
-  try { await deriveMasterKey("x", { memoryKiB: 64 }); } catch {}
+  await assert.rejects(deriveMasterKey("x", { memoryKiB: 64 }), /needs the native half/);
   assert.equal(calls.length, 0);
-  ok("native half missing: JS crypto is used, native is never called for keys");
+  ok("native half missing: key derivation fails clearly, native is never called for keys");
 
   bindHost({ unscoped: { modules: {} } });
   assert.equal(await startNative(), false);
@@ -109,31 +109,24 @@ function install(behavior = {}) {
   ok("wrong ping reply: not used");
 }
 
-// 5. native errors on a real derivation after passing the self-check: falls back to JS
-if (realCrypto) {
-  const { argon2id } = await import("../js/crypto/argon2.ts");
-  const { utf8Encode } = await import("../js/crypto/utf8.ts");
+// 5. native errors on a real derivation after passing the self-check: clear error, no JS fallback
+{
   install();
   assert.equal(await startNative(), true);
-  // now make real derivations fail
   bindHost({ unscoped: { modules: { native: { callNativeMethod: async () => { throw new Error("boom"); } } } } });
-  const key = await deriveMasterKey("fallback pw", { memoryKiB: 64 });
-  const want = await argon2id(utf8Encode("fallback pw"), utf8Encode("dcenc2|user-key|v1"), { t: 3, m: 64, dkLen: 32 });
-  assert.deepEqual(Buffer.from(key), Buffer.from(want));
-  ok("native errors on a real derivation: JS Argon2id gives the key instead");
+  await assert.rejects(deriveMasterKey("fallback pw", { memoryKiB: 64 }), /needs the native half/);
+  ok("native errors on a real derivation: derivation fails (no JS Argon2id any more)");
   stopNative();
-} else {
-  console.log("  --  skipped: JS-fallback derivation (install @noble/hashes to run it)");
 }
 
-// 6. a ping that never answers is given up on (3 s) and JS crypto stays in use
+// 6. a ping that never answers is given up on (3 s) and native stays unused
 {
   bindHost({ unscoped: { modules: { native: { callNativeMethod: () => new Promise(() => {}) } } } });
   const t0 = Date.now();
   assert.equal(await startNative(), false);
   assert.ok(Date.now() - t0 < 5000);
   assert.match(diag.installed["native crypto"], /timed out/);
-  ok("a native call that never answers times out and falls back");
+  ok("a native call that never answers times out");
 }
 
 stopNative();

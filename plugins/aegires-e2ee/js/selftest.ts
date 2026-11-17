@@ -7,8 +7,7 @@ import { deriveKey } from "./crypto/keys.ts";
 import { decryptBytes, decryptText, encryptBytes, encryptText } from "./crypto/wire.ts";
 import { decryptFile, decryptMessage, encryptFile, encryptMessage, messagePreset, presetFromIndex } from "./crypto/v2.ts";
 import { deriveMasterKey } from "./crypto/kdf2.ts";
-import { nativeAesBench, nativeBench, nativeHkdfBench, nativeReady } from "./engine/engine.ts";
-import { diag } from "./diag.ts";
+import { nativeCryptoBench } from "./engine/engine.ts";
 import { fromHex, toHex } from "./crypto/hex.ts";
 import { hasSecureRandom } from "./crypto/random.ts";
 import { fileModule } from "./native.ts";
@@ -28,7 +27,7 @@ export async function runSelfTest(): Promise<{ ok: boolean; lines: string[] }> {
 
   const rng = hasSecureRandom();
   check(rng, "secure random (crypto.getRandomValues) available");
-  check(typeof (globalThis as any).BigInt === "function", "BigInt available (needed for Argon2id)");
+  check(typeof (globalThis as any).BigInt === "function", "BigInt available");
 
   // ---- v1
   for (const v of VECTORS_V1) {
@@ -100,20 +99,26 @@ export function fmtMs(ms: number): string {
 
 const hexOf = (b: Uint8Array): string => Array.from(b.subarray(0, 8), (x) => x.toString(16).padStart(2, "0")).join("");
 const nowMs = (): number => (typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now());
-const median = (a: number[]): number => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
 const oneLine = (e: unknown): string => String((e as any)?.message ?? e).split("\n")[0].slice(0, 90);
 const yieldUi = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-type Timing = { ms: number; head: string };
-type Row = { id: "js" | "java" | "c"; name: string; run: (() => Promise<Timing>) | null; skip?: string };
+/** [ms, output head, reason]: what the native half needs to know about one plain JS test. */
+type JsLeg = [string, string, string];
+const jsLeg = async (run: () => Promise<{ ms: number; head: string }>): Promise<JsLeg> => {
+  try {
+    const r = await run();
+    return [String(r.ms), r.head, ""];
+  } catch (e) {
+    return ["-1", "", oneLine(e)];
+  }
+};
 
 let benchRunning = false;
 
 /**
- * Crypto benchmark in three sections: Argon2id, HKDF-SHA256 and AES-256-GCM, each on plain JS,
- * Kotlin/Java and the C library. Native results are the median of 3 runs, timed inside the native half.
- * An engine that cannot run here (no native half, no C library, JS not asked for) is skipped with the
- * reason shown, and the remaining tests still run. `lines` is called as results arrive.
+ * Settings > Crypto benchmark (Argon2id, HKDF-SHA256, AES-256-GCM). Only the plain JS timings are made
+ * here, because only JS can time JS. The Java and C engines, the checks and the report text are all done
+ * by the native half (CryptoBench.java). Plain JS only runs when asked (slow).
  */
 export async function benchCrypto(
   memMiB: number,
@@ -121,96 +126,16 @@ export async function benchCrypto(
   lines: (l: string[]) => void,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
-  if (benchRunning) return; // one run at a time, so two runs can never write into the same list
+  if (benchRunning) return; // one run at a time
   benchRunning = true;
   try {
-    await benchCryptoRun(memMiB, includeJs, lines, onProgress);
-  } finally {
-    benchRunning = false;
-  }
-}
-
-async function benchCryptoRun(
-  memMiB: number,
-  includeJs: boolean,
-  lines: (l: string[]) => void,
-  onProgress?: (fraction: number) => void,
-): Promise<void> {
-  const HKDF_N = 2000;
-  const AES_N = 150;
-  const out: string[] = [];
-  const push = (l: string): number => { out.push(l); lines(out.slice()); return out.length - 1; };
-  const set = (i: number, l: string) => { out[i] = l; lines(out.slice()); };
-  const enc = (t: string) => new TextEncoder().encode(t);
-  const cWorked: Record<string, boolean> = {};
-
-  // What can run on this phone right now, decided once so unavailable engines are skipped, not attempted.
-  const nativeUp = nativeReady();
-  const cUp = nativeUp && String(diag.argon2Engine).startsWith("C library");
-  const noNative = "native half not installed";
-  const noC = "C library not loaded" + (diag.argon2Engine ? ": " + diag.argon2Engine : "");
-
-  const section = async (key: string, title: string, rows: Row[], noteC?: string) => {
-    if (out.length) push("");
-    push(title);
-    const at: Record<string, number> = {};
-    const res: Partial<Record<Row["id"], Timing>> = {};
-    for (const row of rows) {
-      if (!row.run) {
-        at[row.id] = push("  " + row.name + ": skipped (" + (row.skip ?? "not run") + ")");
-        continue;
-      }
-      at[row.id] = push("  " + row.name + ": running...");
-      try {
-        res[row.id] = await row.run();
-        set(at[row.id], "  " + row.name + ": " + fmtMs(res[row.id]!.ms));
-      } catch (e) {
-        set(at[row.id], "  " + row.name + ": skipped (" + oneLine(e) + ")"); // never stops the other tests
-      }
-    }
-    if (noteC) push("  Native: n/a (" + noteC + ")");
-    // Final text per row: answer check against Java (or the first engine that ran), and the speedups.
-    const ref = res.java ?? res.c ?? res.js;
-    const name = (id: Row["id"]) => rows.find((r) => r.id === id)!.name;
-    const done = (id: Row["id"], extra: string) => {
-      const r = res[id];
-      if (!r || !ref) return;
-      set(at[id], "  " + name(id) + ": " + fmtMs(r.ms) + (r.head === ref.head ? " (match)" : " (MISMATCH!)") + extra);
-    };
-    const times = (a: number, b: number) => "x" + (a / b).toFixed(a / b >= 100 ? 0 : a / b >= 10 ? 1 : 2);
-    done("js", "");
-    done("java", res.js && res.java ? "  " + times(res.js.ms, res.java.ms) + " vs JS" : "");
-    done("c", res.java && res.c ? "  " + times(res.java.ms, res.c.ms) + " vs Java" : "");
-    cWorked[key] = !!res.c;
-  };
-
-  const jsSkip = includeJs ? undefined : "plain JS is off";
-  const jsRow = (run: () => Promise<Timing>): Pick<Row, "run" | "skip"> => (includeJs ? { run } : { run: null, skip: jsSkip });
-  const nativeRow = (ok: boolean, why: string, run: () => Promise<Timing>): Pick<Row, "run" | "skip"> => (ok ? { run } : { run: null, skip: why });
-
-  // ---- Argon2id (3 passes, memMiB, 32 bytes) ----
-  const mKiB = memMiB * 1024;
-  await section("argon", `Argon2id (3, ${memMiB} MiB, 32B)`, [
-    {
-      id: "js",
-      name: "Plain JS",
-      ...jsRow(async () => {
-        const { argon2id } = await import("./crypto/argon2.ts");
-        const t0 = nowMs();
-        const key = await argon2id(enc("benchmark-password"), enc("dcenc2|bench|v1"), { t: 3, m: mKiB, dkLen: 32, onProgress });
-        return { ms: nowMs() - t0, head: hexOf(key) };
-      }),
-    },
-    { id: "java", name: "Java", ...nativeRow(nativeUp, noNative, async () => { const r = await nativeBench("java", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; }) },
-    { id: "c", name: "Native", ...nativeRow(cUp, noC, async () => { const r = await nativeBench("c", 3, mKiB, 3); return { ms: median(r.ms), head: r.head }; }) },
-  ]);
-
-  // ---- HKDF-SHA256 extract+expand x2000 (44 bytes out, like an AES-256 key + nonce) ----
-  await section("hkdf", `HKDF-SHA256 extract+expand x${HKDF_N}`, [
-    {
-      id: "js",
-      name: "Plain JS",
-      ...jsRow(async () => {
+    const enc = (t: string) => new TextEncoder().encode(t);
+    const off: JsLeg = ["-1", "", "plain JS is off"];
+    let argon = off, hkdfLeg = off, aes = off;
+    if (includeJs) {
+      lines(["Running the plain JS tests (slow)..."]);
+      argon = ["-1", "", "JS Argon2id was removed"];
+      hkdfLeg = await jsLeg(async () => {
         const { hkdf } = await import("@noble/hashes/hkdf");
         const { sha256 } = await import("@noble/hashes/sha256");
         const ikm = new Uint8Array(32), salt = new Uint8Array(16);
@@ -218,49 +143,35 @@ async function benchCryptoRun(
         const info = enc("aegires|bench|hkdf");
         let last = new Uint8Array(0);
         const t0 = nowMs();
-        for (let k = 0; k < HKDF_N; k++) {
+        for (let k = 0; k < 2000; k++) {
           last = hkdf(sha256, ikm, salt, info, 44);
-          if (k % 200 === 199) { onProgress?.((k + 1) / HKDF_N); await yieldUi(); }
+          if (k % 200 === 199) { onProgress?.((k + 1) / 2000); await yieldUi(); }
         }
         return { ms: nowMs() - t0, head: hexOf(last) };
-      }),
-    },
-    { id: "java", name: "Java", ...nativeRow(nativeUp, noNative, async () => { const r = await nativeHkdfBench("java", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; }) },
-    { id: "c", name: "Native", ...nativeRow(cUp, noC, async () => { const r = await nativeHkdfBench("c", HKDF_N, 3); return { ms: median(r.ms), head: r.head }; }) },
-  ]);
-
-  // ---- AES-256-GCM, 64 KiB encrypt + decrypt x150 (there is no C AES: Java only) ----
-  await section(
-    "aes",
-    `AES-256-GCM 64KiB enc+dec x${AES_N}`,
-    [
-      {
-        id: "js",
-        name: "Plain JS",
-        ...jsRow(async () => {
-          const { gcmOpen, gcmSeal } = await import("./crypto/aead.ts");
-          const key = new Uint8Array(32), plain = new Uint8Array(64 * 1024);
-          for (let i = 0; i < 32; i++) key[i] = (i * 11 + 5) & 255;
-          for (let i = 0; i < plain.length; i++) plain[i] = (i * 31 + (i >> 8)) & 255;
-          const aad = new Uint8Array(0);
-          const t0 = nowMs();
-          for (let k = 0; k < AES_N; k++) {
-            const nonce = new Uint8Array(12);
-            nonce[0] = k & 255; nonce[1] = k >> 8;
-            const back = gcmOpen(key, nonce, aad, gcmSeal(key, nonce, aad, plain, 16), 16);
-            if (!back || back[777] !== plain[777]) throw new Error("JS AES round trip failed");
-            if (k % 10 === 9) { onProgress?.((k + 1) / AES_N); await yieldUi(); }
-          }
-          const ms = nowMs() - t0;
-          return { ms, head: hexOf(gcmSeal(key, new Uint8Array(12), aad, plain, 16)) };
-        }),
-      },
-      { id: "java", name: "Java/Conscrypt", ...nativeRow(nativeUp, noNative, async () => { const r = await nativeAesBench(AES_N, 3); return { ms: median(r.ms), head: r.head }; }) },
-    ],
-    "no C version, Java only",
-  );
-
-  push("");
-  const abi = nativeUp ? (diag.argon2Engine || "unknown") : "native half not installed";
-  push("Native: " + abi + " | Argon2id=" + (cWorked.argon ? "native" : "Java") + " HKDF=" + (cWorked.hkdf ? "native" : "Java") + " AES=Java");
+      });
+      aes = await jsLeg(async () => {
+        const { gcmOpen, gcmSeal } = await import("./crypto/aead.ts");
+        const key = new Uint8Array(32), plain = new Uint8Array(64 * 1024);
+        for (let i = 0; i < 32; i++) key[i] = (i * 11 + 5) & 255;
+        for (let i = 0; i < plain.length; i++) plain[i] = (i * 31 + (i >> 8)) & 255;
+        const aad = new Uint8Array(0);
+        const t0 = nowMs();
+        for (let k = 0; k < 150; k++) {
+          const nonce = new Uint8Array(12);
+          nonce[0] = k & 255; nonce[1] = k >> 8;
+          const back = gcmOpen(key, nonce, aad, gcmSeal(key, nonce, aad, plain, 16), 16);
+          if (!back || back[777] !== plain[777]) throw new Error("JS AES round trip failed");
+          if (k % 10 === 9) { onProgress?.((k + 1) / 150); await yieldUi(); }
+        }
+        const ms = nowMs() - t0;
+        return { ms, head: hexOf(gcmSeal(key, new Uint8Array(12), aad, plain, 16)) };
+      });
+    }
+    lines(["Running the native tests..."]);
+    lines((await nativeCryptoBench(memMiB, [...argon, ...hkdfLeg, ...aes])).split("\n"));
+  } catch (e) {
+    lines(["Benchmark failed: " + oneLine(e)]);
+  } finally {
+    benchRunning = false;
+  }
 }

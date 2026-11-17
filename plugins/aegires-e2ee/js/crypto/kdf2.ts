@@ -32,12 +32,15 @@ export type KdfOptions = {
   memoryKiB?: number;
 };
 
-/** Faster Argon2id elsewhere (the WebView engine); resolves null to use the JS code here. */
+/** Argon2id from the native half (Kotlin/Java/C). Resolves null when it failed. */
 export type Argon2Offload = (password: Uint8Array, salt: Uint8Array, t: number, mKiB: number, len: number) => Promise<Uint8Array | null>;
 let offload: Argon2Offload | null = null;
 
-export function setArgon2Offload(fn: Argon2Offload | null): void {
+let nativeWhy = "";
+
+export function setArgon2Offload(fn: Argon2Offload | null, why = ""): void {
   offload = fn;
+  nativeWhy = why;
 }
 
 /** Developer option: replaces the standard 3 passes / 64 MiB. Keys made this way do NOT match other Aegires clients. */
@@ -50,8 +53,8 @@ export function setKdfOverride(o: KdfOverride | null): void {
 
 export const getKdfOverride = (): KdfOverride | null => kdfOverride;
 
-/** Developer option: which Argon2id runs. auto = C library, else Kotlin/Java, else plain JS. */
-export type ArgonEngine = "auto" | "c" | "java" | "js";
+/** Developer option: which Argon2id runs. auto = C library, else Kotlin/Java. */
+export type ArgonEngine = "auto" | "c" | "java";
 let argonEngine: ArgonEngine = "auto";
 
 export function setArgonEngine(e: ArgonEngine): void {
@@ -67,17 +70,10 @@ export async function deriveMasterKey(password: string, opts: KdfOptions = {}): 
   const custom = opts.memoryKiB === undefined ? kdfOverride : null;
   const t = custom ? custom.t : ARGON_T;
   const m = opts.memoryKiB ?? (custom ? custom.mKiB : ARGON_M_KIB);
-  if (offload && argonEngine !== "js") {
+  if (offload) {
     const fast = await offload(utf8Encode(normalize(password)), salt, t, m, MASTER_LEN).catch(() => null);
     if (fast && fast.length === MASTER_LEN) return fast;
   }
-  // Lazy import: BLAKE2b (@noble/hashes) uses BigInt at module load. Loading it only when a key is
-  // derived means a runtime without BigInt can still decrypt/encrypt with stored keys.
-  const { argon2id } = await import("./argon2.ts");
-  return argon2id(utf8Encode(normalize(password)), salt, {
-    t,
-    m,
-    dkLen: MASTER_LEN,
-    onProgress: opts.onProgress, // also yields to the event loop every ~100 ms so the UI stays alive
-  });
+  // No JS Argon2id any more (far too slow on Hermes): the native half is required for key derivation.
+  throw new Error("Argon2id needs the native half of this plugin, which is not available (" + (nativeWhy || "not started yet") + ")");
 }

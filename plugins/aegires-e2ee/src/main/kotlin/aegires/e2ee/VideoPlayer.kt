@@ -27,7 +27,7 @@ internal object VideoPlayer {
 
     fun isAudio(path: String): Boolean = path.substringAfterLast('.', "").lowercase() in AUDIO
 
-    fun show(activity: Activity, path: String, title: String = "") {
+    fun show(activity: Activity, path: String, title: String = "", startMs: Int = 0) {
         activity.runOnUiThread {
             try {
                 if (!allowed(path) || !File(path).isFile) {
@@ -44,7 +44,10 @@ internal object VideoPlayer {
                 controls.setAnchorView(video)
                 video.setMediaController(controls)
                 video.setVideoPath(path)
-                video.setOnPreparedListener { video.start() }
+                video.setOnPreparedListener {
+                    if (startMs > 0) video.seekTo(startMs)
+                    video.start()
+                }
                 video.setOnErrorListener { _, _, _ ->
                     Toast.makeText(activity, "Can't play this file format", Toast.LENGTH_LONG).show()
                     dialog.dismiss()

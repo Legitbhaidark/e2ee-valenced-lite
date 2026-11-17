@@ -63,7 +63,7 @@ export default plugin({
     safely("video player", installVideoPlayer);
     safely("header lock", installHeaderLock);
     safely("encryption button", installEncButton);
-    // Faster Argon2id from the native half, if it is installed and passes its self-check.
+    // Argon2id comes from the native half; checked here.
     void startNative();
     api.cleanup(unloadAll, stopNative, async () => {
       await detachStorage();

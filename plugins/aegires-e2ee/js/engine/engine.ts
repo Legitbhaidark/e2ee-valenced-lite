@@ -2,9 +2,9 @@
 // Valenced's native bridge. Right now it does one job: Argon2id, the slow step that turns your
 // password into a key (64 MiB of memory work, done once per password and then cached).
 //
-// If the native half is not installed, fails its self-check, or errors, everything silently
-// falls back to the plain JS Argon2id (same bytes, just slower). The WebView engine of the Kettu
-// version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
+// There is no JS Argon2id any more: if the native half is not installed, fails its self-check or
+// errors, deriving a key fails with a clear message (stored keys keep working). The WebView engine
+// of the Kettu version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
 import { unscoped } from "../host.ts";
 import { getArgonEngine, setArgon2Offload } from "../crypto/kdf2.ts";
 import { base64Decode, base64Encode } from "../crypto/base64.ts";
@@ -59,30 +59,17 @@ async function nativeArgon2(password: Uint8Array, salt: Uint8Array, t: number, m
   return typeof out === "string" ? base64Decode(out) : null;
 }
 
-/** "<hash head>;<ns>,<ns>,..." from the native half -> timings in ms and the first 8 output bytes (hex). */
-function parseBench(out: unknown): { ms: number[]; head: string } {
-  if (typeof out !== "string" || out.indexOf(";") < 0) throw new Error("unexpected benchmark reply");
-  const [head, times] = out.split(";");
-  return { head, ms: times.split(",").map((n) => Number(n) / 1e6) };
-}
-
 /**
- * Benchmarks of the native half. All are timed inside it (the bridge is not in the numbers) and throw
- * with the reason when an engine is not available ("c" without the C library, or an old native half).
+ * Settings > Crypto benchmark. The native half times the Java and C engines and writes the whole report;
+ * `js` is the plain JS result for Argon2id, HKDF and AES in turn: [ms ("-1" = not run), output head, reason].
  */
-export async function nativeBench(engine: "c" | "java", t: number, mKiB: number, runs: number): Promise<{ ms: number[]; head: string }> {
-  return parseBench(await callNative("argon2bench", [engine, String(t), String(mKiB), String(runs)], 120000));
+export async function nativeCryptoBench(memMiB: number, js: string[]): Promise<string> {
+  const out = await callNative("cryptobench", [String(memMiB), ...js], 300000);
+  if (typeof out !== "string") throw new Error("unexpected benchmark reply");
+  return out;
 }
 
-export async function nativeHkdfBench(engine: "c" | "java", iterations: number, runs: number): Promise<{ ms: number[]; head: string }> {
-  return parseBench(await callNative("hkdfbench", [engine, String(iterations), String(runs)], 120000));
-}
-
-export async function nativeAesBench(iterations: number, runs: number): Promise<{ ms: number[]; head: string }> {
-  return parseBench(await callNative("aesbench", [String(iterations), String(runs)], 120000));
-}
-
-/** Real-size offload: records success or the exact failure in Diagnostics, then lets the JS code take over on failure. */
+/** Real-size derivation: records success or the exact failure in Diagnostics. */
 async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: number, mKiB: number, len: number): Promise<Uint8Array | null> {
   try {
     const out = await nativeArgon2(password, salt, t, mKiB, len);
@@ -93,7 +80,7 @@ async function nativeArgon2Tracked(password: Uint8Array, salt: Uint8Array, t: nu
   } catch (e) {
     diag.engineFallbacks++;
     diag.engineLastError = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
-    diag.installed["native crypto"] = "FAILED at real size, JS used (" + diag.engineLastError + ")";
+    diag.installed["native crypto"] = "FAILED at real size (" + diag.engineLastError + ")";
     return null;
   }
 }
@@ -162,8 +149,19 @@ export async function nativePlayVideo(path: string): Promise<void> {
 }
 
 /** Opens the native full-screen player on a decrypted video or audio file. The title is shown for audio. */
-export async function nativePlayMedia(path: string, title: string): Promise<void> {
-  await callNative("playmedia", [path, title], 5000);
+export async function nativePlayMedia(path: string, title: string, inline = false, w = 0, h = 0): Promise<void> {
+  await callNative("playmedia", [path, title, inline ? "inline" : "full", String(Math.round(w) || 0), String(Math.round(h) || 0)], 5000);
+}
+
+/** What the in-chat player did for the last tap (Diagnostics): "inline" or why it fell back to full screen. */
+export async function nativeInlineStatus(): Promise<string> {
+  const out = await callNative("inlinestatus", [], 3000);
+  return typeof out === "string" ? out : String(out ?? "");
+}
+
+/** Starts noting where the screen is touched (needed to find the picture a video plays on). */
+export async function nativeTouchSpy(): Promise<void> {
+  await callNative("touchspy", [], 3000);
 }
 
 /**
@@ -190,6 +188,27 @@ export async function nativeProgress(outPath: string): Promise<number | null> {
 /** Sets the header "E2EE" button (native overlay): "on" | "off" | "locked" | "hide". */
 export async function nativeEncButton(state: "on" | "off" | "locked" | "hide"): Promise<void> {
   await callNative("encbutton", [state], 3000);
+}
+
+/** Why the header button is shown or hidden (Diagnostics). */
+export async function nativeEncButtonStatus(): Promise<string> {
+  const out = await callNative("encbuttonstatus", [], 3000);
+  return typeof out === "string" ? out : String(out ?? "");
+}
+
+/** Native settings screen (SettingsScreen.kt): open it with the current values, change them while open, poll what the user did. */
+export async function nativeSettingsOpen(stateJson: string): Promise<void> {
+  await callNative("settingsopen", [stateJson], 5000);
+}
+
+export async function nativeSettingsUpdate(partialJson: string): Promise<void> {
+  await callNative("settingsupdate", [partialJson], 3000);
+}
+
+export async function nativeSettingsTake(): Promise<{ open: boolean; events: any[] }> {
+  const out = await callNative("settingstake", [], 3000);
+  const r = JSON.parse(typeof out === "string" ? out : "{}");
+  return { open: !!r.open, events: Array.isArray(r.events) ? r.events : [] };
 }
 
 /** Presses of the header button since the last call. */
@@ -291,15 +310,16 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
+    void nativeTouchSpy().catch(() => {}); // the UI is up by now, so the window can be wrapped
     diag.argon2Engine = await readArgon2Engine();
     void checkV2();
   } catch (e) {
     // First line only (a native failure carries a whole Java stack trace), long enough to name the exception.
     why = String((e as any)?.message ?? e).split("\n")[0].slice(0, 160);
   }
-  diag.engine = nativeOk ? "native (" + diag.argon2Engine + ")" : "not in this build (JS crypto only)";
-  setArgon2Offload(nativeOk ? nativeArgon2Tracked : null);
-  diag.installed["native crypto"] = nativeOk ? "ok (Argon2id: " + diag.argon2Engine + ", self-checked)" : "not used - JS crypto (" + why + ")";
+  diag.engine = nativeOk ? "native (" + diag.argon2Engine + ")" : "native unavailable (no Argon2id)";
+  setArgon2Offload(nativeOk ? nativeArgon2Tracked : null, why);
+  diag.installed["native crypto"] = nativeOk ? "ok (Argon2id: " + diag.argon2Engine + ", self-checked)" : "UNAVAILABLE - keys cannot be derived (" + why + ")";
   return nativeOk;
 }
 
