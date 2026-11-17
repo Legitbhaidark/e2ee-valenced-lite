@@ -33,7 +33,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
  *   here -> JS   settingstake()             {"open":bool,"events":[...]} - JS polls this, like the header button
  *
  * Events: {"t":"set","k":<key>,"v":<bool|string>}  {"t":"setPreset","i":<preset index>}
- *         {"t":"setKey","pw":<password>}  {"t":"clearKey"}
+ *         {"t":"setKey","pw":<password>}  {"t":"clearKey"}  {"t":"tools"} (dev builds: closes, JS shows the older screen)
+ *         {"t":"saveChat","id":<channel>,"pw":<optional>}  {"t":"chatEnabled","id":..,"v":bool}  {"t":"removeChat","id":..}
  */
 internal object SettingsScreen {
     private const val BG = 0xFF1E1F22.toInt()
@@ -59,6 +60,10 @@ internal object SettingsScreen {
     private var passwordField: EditText? = null
     private var formatTitle: TextView? = null
     private val presetButtons = ArrayList<PresetButton>()
+    private var chatIdField: EditText? = null
+    private var chatPwField: EditText? = null
+    private var chatSaveButton: Button? = null
+    private var chatListBox: LinearLayout? = null
 
     private class PresetButton(val index: Int, val label: String, val max: Int, val button: Button)
 
@@ -113,6 +118,7 @@ internal object SettingsScreen {
                 }
                 refreshKeyCard()
                 refreshFormatCard()
+                refreshChatCard()
             } catch (_: Throwable) {
             }
         }
@@ -154,6 +160,8 @@ internal object SettingsScreen {
         col.addView(formatCard(a))
         builtinCard(a)?.let { col.addView(it) }
         col.addView(behaviourCard(a))
+        col.addView(chatCard(a))
+        if (state.optBoolean("isDev", false)) col.addView(toolsCard(a, d))
         col.addView(versionsCard(a))
         val scroll = ScrollView(a)
         scroll.addView(col)
@@ -283,6 +291,107 @@ internal object SettingsScreen {
         toggle(a, c, v, "encButton", "Show an E2EE on/off button in the chat header, left of the search icon")
         toggle(a, c, v, "showLock", "Show a lock icon next to the time of decrypted messages")
         if (state.optBoolean("isDev", false)) toggle(a, c, v, "debug", "Debug logging")
+        return c
+    }
+
+    private fun field(a: Activity, hint: String, secret: Boolean, digits: Boolean): EditText {
+        val e = EditText(a)
+        e.hint = hint
+        e.setHintTextColor(MUTED)
+        e.setTextColor(TEXT)
+        e.inputType = when {
+            secret -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            digits -> InputType.TYPE_CLASS_NUMBER
+            else -> InputType.TYPE_CLASS_TEXT
+        }
+        e.setBackgroundColor(INPUT)
+        e.setPadding(dp(a, 12f), dp(a, 10f), dp(a, 12f), dp(a, 10f))
+        return e
+    }
+
+    private fun chatCard(a: Activity): View {
+        val c = card(a, "Per-chat key / switch")
+        c.addView(label(a, "Channel ID is pre-filled with the chat you had open. Leave the password empty to only change on/off.", MUTED, 14f, false), top(a, 4f))
+        val id = field(a, "Channel ID", secret = false, digits = true)
+        id.setText(state.optString("chanId"))
+        c.addView(id, top(a, 10f))
+        chatIdField = id
+        val pw = field(a, "Password for this chat only (optional)", secret = true, digits = false)
+        c.addView(pw, top(a, 8f))
+        chatPwField = pw
+        val save = button(a, "Save for this chat", ACCENT)
+        save.setOnClickListener {
+            val chan = id.text.toString().trim()
+            if (!Regex("\\d+").matches(chan)) {
+                Toast.makeText(a, "Channel ID must be digits only", Toast.LENGTH_SHORT).show()
+            } else {
+                events.add(JSONObject().put("t", "saveChat").put("id", chan).put("pw", pw.text.toString()).toString())
+                pw.setText("")
+            }
+        }
+        c.addView(save, top(a, 10f))
+        chatSaveButton = save
+        val box = LinearLayout(a)
+        box.orientation = LinearLayout.VERTICAL
+        c.addView(box, top(a, 4f))
+        chatListBox = box
+        refreshChatCard()
+        return c
+    }
+
+    private fun refreshChatCard() {
+        val a = activity ?: return
+        val busy = state.optBoolean("chatBusy", false)
+        chatSaveButton?.text = if (busy) state.optString("chatStatus", "Working...") else "Save for this chat"
+        chatSaveButton?.isEnabled = !busy
+        val box = chatListBox ?: return
+        box.removeAllViews()
+        val arr = state.optJSONArray("chats") ?: return
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val chan = o.getString("id")
+            val line = View(a)
+            line.setBackgroundColor(INPUT)
+            box.addView(line, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 1f)).also { it.topMargin = dp(a, 12f) })
+            box.addView(label(a, chan + (if (o.optBoolean("hasKey", false)) "  (own key)" else ""), TEXT, 15f, false), top(a, 8f))
+            val row = LinearLayout(a)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.addView(label(a, "Encrypt outgoing here", TEXT, 15f, false), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val sw = Switch(a)
+            sw.isChecked = o.optBoolean("enabled", false)
+            sw.setOnCheckedChangeListener { _, checked ->
+                o.put("enabled", checked)
+                events.add(JSONObject().put("t", "chatEnabled").put("id", chan).put("v", checked).toString())
+            }
+            row.addView(sw)
+            box.addView(row, top(a, 8f))
+            val rm = button(a, "Remove", DANGER)
+            rm.setOnClickListener {
+                events.add(JSONObject().put("t", "removeChat").put("id", chan).toString())
+                state.optJSONArray("chats")?.let { list ->
+                    for (j in 0 until list.length()) {
+                        if (list.getJSONObject(j).optString("id") == chan) {
+                            list.remove(j)
+                            break
+                        }
+                    }
+                }
+                refreshChatCard()
+            }
+            box.addView(rm, top(a, 8f))
+        }
+    }
+
+    private fun toolsCard(a: Activity, d: Dialog): View {
+        val c = card(a, "Developer tools")
+        c.addView(label(a, "Diagnostics, self-test, crypto benchmark and developer options are still on the older screen (dev builds only).", MUTED, 14f, false), top(a, 4f))
+        val b = button(a, "Open developer tools", ACCENT)
+        b.setOnClickListener {
+            events.add(JSONObject().put("t", "tools").toString())
+            d.dismiss()
+        }
+        c.addView(b, top(a, 10f))
         return c
     }
 

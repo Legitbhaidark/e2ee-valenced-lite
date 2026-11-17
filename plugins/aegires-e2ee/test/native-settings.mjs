@@ -84,6 +84,29 @@ await handleEvent({ t: "set", k: "padme", v: true });
 assert.equal(snapshot().values.padme, true);
 ok("format card: preset choice, v1 label, Padmé, built-in channels list");
 
+// per-chat card
+assert.equal(snap.chanId, "", "no chat open in the test");
+assert.deepEqual(snap.chats, []);
+updates.length = 0;
+await handleEvent({ t: "saveChat", id: "abc" });
+assert.equal(updates.length, 0, "a channel id with letters is refused before anything happens");
+await handleEvent({ t: "saveChat", id: "123456789" });
+assert.deepEqual(snapshot().chats, [{ id: "123456789", hasKey: false, enabled: true }], "no password: only switched on");
+assert.equal(updates.at(-1).chatBusy, false);
+await handleEvent({ t: "saveChat", id: "987654321", pw: "chat password" });
+assert.equal(updates.some((u) => u.chatBusy === true), true, "a password shows busy while the key is derived");
+assert.equal(snapshot().chats.find((c) => c.id === "987654321").hasKey, true);
+await handleEvent({ t: "chatEnabled", id: "987654321", v: false });
+assert.equal(snapshot().chats.find((c) => c.id === "987654321").enabled, false);
+assert.deepEqual(updates.at(-1).chats.map((c) => c.id).sort(), ["123456789", "987654321"]);
+await handleEvent({ t: "removeChat", id: "123456789" });
+assert.deepEqual(snapshot().chats.map((c) => c.id), ["987654321"]);
+await handleEvent({ t: "removeChat", id: "987654321" });
+await handleEvent({ t: "saveChat", id: "55", pw: "short" });
+assert.equal(updates.at(-1).chatBusy, false, "a refused password still ends the busy state");
+assert.deepEqual(snapshot().chats, []);
+ok("per-chat card: save, own key, switch, remove, bad input");
+
 // toggles
 await handleEvent({ t: "set", k: "showLock", v: false });
 assert.equal(storage.showLock, false);
@@ -116,6 +139,7 @@ assert.equal(storage.autoDecryptMB, 1234, "digits only, 4 at most");
 ok("auto-decrypt size: digits only, empty = 25");
 
 // global key
+updates.length = 0;
 await handleEvent({ t: "setKey", pw: "correct horse" });
 assert.equal(hasGlobalKey(), true);
 assert.equal(updates[0].busy, true);
@@ -145,6 +169,21 @@ isOpen = false;
 await tick(450);
 assert.equal(storage.showLock, false, "the last events are still applied after the screen closes");
 ok("open: the loop applies events and stops after the screen closes");
+
+// close callback: plain close, and "developer tools" request
+const reasons = [];
+isOpen = true;
+assert.equal(await openNativeSettings((r) => reasons.push(r)), "");
+isOpen = false;
+await tick(450);
+assert.deepEqual(reasons, ["closed"]);
+isOpen = true;
+assert.equal(await openNativeSettings((r) => reasons.push(r)), "");
+queue = [{ t: "tools" }];
+isOpen = false;
+await tick(800); // one poll takes the event, the next sees the screen closed
+assert.deepEqual(reasons, ["closed", "tools"], "the tools request is passed on when the screen closes");
+ok("open: the close callback says whether developer tools were asked for");
 
 await detachStorage();
 unbindHost();

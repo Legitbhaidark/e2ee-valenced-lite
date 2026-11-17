@@ -5,7 +5,8 @@ import { nativeReady, nativeSettingsOpen, nativeSettingsTake, nativeSettingsUpda
 import { storage } from "./storage.ts";
 import { diag } from "./diag.ts";
 import { notify } from "./notify.ts";
-import { PRESETS, clearGlobalKey, getPreset, hasGlobalKey, passwordRule, setGlobalPassword, setPreset } from "./state.ts";
+import { PRESETS, clearGlobalKey, getPreset, hasGlobalKey, listChannelConfigs, passwordRule, removeChannelConfig, setChannelEnabled, setChannelPassword, setGlobalPassword, setPreset } from "./state.ts";
+import { selectedChannelId } from "./patch.ts";
 import { maxPlaintextBytes } from "./crypto/v2.ts";
 import { FORCED_CHANNELS } from "./forced.ts";
 import { clearLinkPreviews } from "./patches/embeds.ts";
@@ -19,6 +20,21 @@ const DEFAULT_ON = new Set(["inlineVideo", "encButton", "padme"]); // a missing 
 
 const toggleValue = (k: string): boolean => (DEFAULT_ON.has(k) ? storage[k] !== false : !!storage[k]);
 
+function currentChannelId(): string {
+  try {
+    return selectedChannelId();
+  } catch {
+    return "";
+  }
+}
+
+/** The saved chats, as the screen shows them. */
+const chatList = () => listChannelConfigs().map((c) => ({ id: c.id, hasKey: c.hasKey, enabled: c.enabled === true }));
+
+/** Set when the user asked the screen for the developer tools (the older screen); read when it closes. */
+let toolsRequested = false;
+let closeCb: ((reason: "closed" | "tools") => void) | null = null;
+
 /** Everything the screen shows. */
 export function snapshot(): Record<string, unknown> {
   const values: Record<string, boolean> = {};
@@ -31,6 +47,8 @@ export function snapshot(): Record<string, unknown> {
     preset: getPreset().index,
     presets: PRESETS.map((x: any) => ({ index: x.index, label: x.label, max: maxPlaintextBytes(x) })),
     forced: Object.keys(FORCED_CHANNELS),
+    chanId: currentChannelId(),
+    chats: chatList(),
     autoMb: Number(storage.autoDecryptMB ?? 25),
     isDev: DEV_BUILD,
     version: PLUGIN_VERSION,
@@ -57,6 +75,16 @@ export async function handleEvent(ev: any): Promise<void> {
         storage.format = "v2";
         setPreset(i);
       }
+    } else if (ev?.t === "tools") {
+      toolsRequested = true;
+    } else if (ev?.t === "saveChat" && typeof ev.id === "string") {
+      await saveChat(ev.id, typeof ev.pw === "string" ? ev.pw : "");
+    } else if (ev?.t === "chatEnabled" && typeof ev.id === "string") {
+      setChannelEnabled(ev.id, ev.v === true);
+      await nativeSettingsUpdate(JSON.stringify({ chats: chatList() }));
+    } else if (ev?.t === "removeChat" && typeof ev.id === "string") {
+      removeChannelConfig(ev.id);
+      await nativeSettingsUpdate(JSON.stringify({ chats: chatList() }));
     } else if (ev?.t === "setKey" && typeof ev.pw === "string" && ev.pw) {
       let last = -1;
       await nativeSettingsUpdate(JSON.stringify({ busy: true, status: "Deriving key..." }));
@@ -83,6 +111,32 @@ export async function handleEvent(ev: any): Promise<void> {
   }
 }
 
+/** Per-chat key / switch: optional own password for this chat, and switch encryption on for it. */
+async function saveChat(id: string, pw: string): Promise<void> {
+  if (!/^\d+$/.test(id)) {
+    notify("Channel ID must be digits only");
+    return;
+  }
+  try {
+    if (pw) {
+      let last = -1;
+      await nativeSettingsUpdate(JSON.stringify({ chatBusy: true, chatStatus: "Deriving key..." }));
+      await setChannelPassword(id, pw, (f) => {
+        const pct = Math.round(f * 100);
+        if (pct !== last) {
+          last = pct;
+          void nativeSettingsUpdate(JSON.stringify({ chatStatus: "Deriving key " + pct + "%" })).catch(() => {});
+        }
+      });
+    }
+    setChannelEnabled(id, true);
+    notify("Chat settings saved");
+  } catch (e) {
+    notify("Save chat settings failed: " + String((e as any)?.message ?? e).split("\n")[0].slice(0, 120));
+  }
+  await nativeSettingsUpdate(JSON.stringify({ chatBusy: false, chatStatus: "", chats: chatList() }));
+}
+
 let polling = false;
 
 async function pump(): Promise<void> {
@@ -98,15 +152,23 @@ async function pump(): Promise<void> {
     // The native half went away: nothing left to poll.
   } finally {
     polling = false;
+    const cb = closeCb;
+    closeCb = null;
+    const reason = toolsRequested ? "tools" : "closed";
+    toolsRequested = false;
+    try { cb?.(reason); } catch {}
   }
 }
 
 /** Opens the native settings screen. Returns "" when it opened, else a short reason to show the user. */
-export async function openNativeSettings(): Promise<string> {
+export async function openNativeSettings(onClose?: (reason: "closed" | "tools") => void): Promise<string> {
   if (!nativeReady()) return "The native module is not loaded, so the settings screen cannot open.";
+  toolsRequested = false;
+  closeCb = onClose ?? null;
   try {
     await nativeSettingsOpen(JSON.stringify(snapshot()));
   } catch (e) {
+    closeCb = null;
     return "Could not open the settings screen: " + String((e as any)?.message ?? e).split("\n")[0].slice(0, 100);
   }
   if (!polling) void pump();

@@ -29,6 +29,7 @@ import { diag, diagLines } from "../diag.ts";
 import { EngineHost, nativeReady } from "../engine/engine.ts";
 import { openNativeSettings } from "../nativeSettings.ts";
 import { DEV_BUILD } from "../about.ts";
+import { unscoped } from "../host.ts";
 
 // React Native binds after this script is evaluated, so each primitive is resolved at render time.
 const lazy = (names: string[], fallback?: () => any) => (props: any) => {
@@ -402,7 +403,7 @@ function boundary(): any {
   return BoundaryClass;
 }
 
-export default function Settings() {
+function TsSettings() {
   try {
     const Boundary = boundary();
     return <Boundary />;
@@ -410,4 +411,53 @@ export default function Settings() {
     try { RN.Alert.alert("Aegires settings crashed", String(e)); } catch {}
     return null;
   }
+}
+
+/** Navigation handle of this screen (to leave it again), if Valenced exposes one. */
+function useNav(): any {
+  try {
+    const hook = unscoped().externals?.ReactNavigation?.ReactNavigationNative?.useNavigation;
+    return typeof hook === "function" ? hook() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What the plugin's gear button opens. It does not draw settings: it opens the native (Kotlin)
+ * screen at once and steps back when that screen is closed. The older screen below only shows
+ * when the native module is missing, or when the native screen's Developer tools button asks for it.
+ */
+export default function Settings() {
+  const nav = useNav();
+  const [mode, setMode] = React.useState("opening");
+  const [why, setWhy] = React.useState("");
+  const open = () => {
+    setMode("opening");
+    openNativeSettings((reason: string) => {
+      if (reason === "tools") return setMode("tools");
+      setMode("closed");
+      try { nav?.goBack?.(); } catch {}
+    }).then((err: string) => {
+      if (err) {
+        setWhy(err);
+        setMode("fallback");
+      }
+    });
+  };
+  React.useEffect(() => { open(); }, []);
+  if (mode === "tools" || mode === "fallback") {
+    return (
+      <>
+        {mode === "fallback" && why ? <Text style={{ color: C.muted, padding: 12 }}>{why}</Text> : null}
+        <TsSettings />
+      </>
+    );
+  }
+  return (
+    <View style={{ flex: 1, padding: 12 }}>
+      <Text style={{ color: C.muted }}>{mode === "closed" ? "Settings closed." : "Opening settings..."}</Text>
+      <Button label="Open settings" onPress={open} />
+    </View>
+  );
 }
