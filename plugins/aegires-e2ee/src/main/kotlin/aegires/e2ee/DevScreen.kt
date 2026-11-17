@@ -265,8 +265,7 @@ internal object DevScreen {
         e.setHintTextColor(S.MUTED)
         e.setTextColor(S.TEXT)
         e.inputType = InputType.TYPE_CLASS_NUMBER
-        e.setBackgroundColor(S.INPUT)
-        e.setPadding(S.dp(a, 12f), S.dp(a, 10f), S.dp(a, 12f), S.dp(a, 10f))
+        S.styleInput(a, e)
         return e
     }
 

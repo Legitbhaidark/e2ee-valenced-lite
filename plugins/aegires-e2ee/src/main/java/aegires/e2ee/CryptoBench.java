@@ -102,8 +102,8 @@ public final class CryptoBench {
 
             Timing ref = javaT != null ? javaT : cT != null ? cT : jsT;
             String javaName = kind == AES ? "Java/Conscrypt" : "Java";
-            row(out, "Plain JS", jsT, jsWhy, ref, jsT == null ? "" : "");
-            row(out, javaName, javaT, javaWhy, ref, jsT != null && javaT != null ? "  " + times(jsT.ms, javaT.ms) + " vs JS" : "");
+            if (kind != ARGON) row(out, "Plain JS", jsT, jsWhy, ref, ""); // no JS Argon2id any more
+            row(out, javaName, javaT, javaWhy, ref, kind != ARGON && jsT != null && javaT != null ? "  " + times(jsT.ms, javaT.ms) + " vs JS" : "");
             if (kind == AES) out.append("  Native: n/a (no C version, Java only)\n");
             else row(out, "Native", cT, cWhy, ref, javaT != null && cT != null ? "  " + times(javaT.ms, cT.ms) + " vs Java" : "");
             cWorked[kind] = cT != null;

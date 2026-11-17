@@ -76,9 +76,9 @@ public class NativeArgon2Test {
         check(ab.split(";")[0].length() == 16 && ab.split(";")[1].split(",").length == 2, "aes bench runs: " + ab);
 
         String headJ = NativeOps.argon2Bench("java", "3", "1024", "1").split(";")[0];
-        String repC = CryptoBench.report(1, new String[]{"12.5", headJ, "", "-1", "", "off", "-1", "", "off"});
-        check(repC.contains("Native: ") && repC.contains("vs Java") && repC.contains("vs JS") && repC.contains("(match)") && !repC.contains("MISMATCH") && repC.contains("Argon2id=native HKDF=native") && repC.contains("C library ("), "benchmark report with C: match, speedups, status line");
-        String repBad = CryptoBench.report(1, new String[]{"12.5", "0000000000000000", "", "-1", "", "off", "-1", "", "off"});
+        String repC = CryptoBench.report(1, new String[]{"-1", "", "off", "-1", "", "off", "-1", "", "off"});
+        check(repC.contains("Native: ") && repC.contains("vs Java") && repC.contains("(match)") && !repC.contains("MISMATCH") && repC.contains("Argon2id=native HKDF=native") && repC.contains("C library ("), "benchmark report with C: match, speedups, status line");
+        String repBad = CryptoBench.report(1, new String[]{"-1", "", "off", "12.5", "0000000000000000", "", "-1", "", "off"});
         check(repBad.contains("Plain JS: 12.5 ms (MISMATCH!)"), "benchmark report flags a wrong plain JS answer");
 
         // 4. refused parameters give null (not a crash), and the C output is the exact length asked for

@@ -182,8 +182,7 @@ internal object SettingsScreen {
         pw.setHintTextColor(MUTED)
         pw.setTextColor(TEXT)
         pw.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        pw.setBackgroundColor(INPUT)
-        pw.setPadding(dp(a, 12f), dp(a, 10f), dp(a, 12f), dp(a, 10f))
+        styleInput(a, pw)
         c.addView(pw, top(a, 10f))
         passwordField = pw
 
@@ -278,8 +277,7 @@ internal object SettingsScreen {
         mb.setHintTextColor(MUTED)
         mb.setTextColor(TEXT)
         mb.inputType = InputType.TYPE_CLASS_NUMBER
-        mb.setBackgroundColor(INPUT)
-        mb.setPadding(dp(a, 12f), dp(a, 10f), dp(a, 12f), dp(a, 10f))
+        styleInput(a, mb)
         mb.setText(state.optInt("autoMb", 25).toString())
         mb.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -297,6 +295,21 @@ internal object SettingsScreen {
         return c
     }
 
+    /** Rounded text box that scrolls itself into view when the keyboard opens (the screen resizes for the keyboard). */
+    internal fun styleInput(a: Activity, e: EditText) {
+        val bg = GradientDrawable()
+        bg.setColor(INPUT)
+        bg.cornerRadius = dp(a, 14f).toFloat()
+        e.background = bg
+        e.setPadding(dp(a, 14f), dp(a, 12f), dp(a, 14f), dp(a, 12f))
+        val reveal = Runnable {
+            if (e.isAttachedToWindow) e.requestRectangleOnScreen(android.graphics.Rect(0, 0, e.width, e.height + dp(a, 24f)), false)
+        }
+        // The keyboard needs a moment to open and resize the screen; reveal again once it has.
+        e.setOnFocusChangeListener { v, focused -> if (focused) { v.postDelayed(reveal, 150); v.postDelayed(reveal, 450) } }
+        e.setOnClickListener { e.postDelayed(reveal, 150); e.postDelayed(reveal, 450) }
+    }
+
     private fun field(a: Activity, hint: String, secret: Boolean, digits: Boolean): EditText {
         val e = EditText(a)
         e.hint = hint
@@ -307,8 +320,7 @@ internal object SettingsScreen {
             digits -> InputType.TYPE_CLASS_NUMBER
             else -> InputType.TYPE_CLASS_TEXT
         }
-        e.setBackgroundColor(INPUT)
-        e.setPadding(dp(a, 12f), dp(a, 10f), dp(a, 12f), dp(a, 10f))
+        styleInput(a, e)
         return e
     }
 
