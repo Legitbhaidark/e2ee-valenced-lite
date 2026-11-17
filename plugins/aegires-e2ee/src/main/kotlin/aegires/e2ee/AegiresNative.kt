@@ -223,6 +223,7 @@ val aegiresNative = plugin {
             val vh: String by args.string()
             if (!VideoPlayer.allowed(path)) throw IllegalArgumentException("path not allowed")
             withAppActivity {
+                InlineVideo.note("not tried: " + (if (mode != "inline") "full-screen mode" else "audio file"))
                 if (mode == "inline" && !VideoPlayer.isAudio(path)) {
                     InlineVideo.start(it, path, title, vw.toIntOrNull() ?: 0, vh.toIntOrNull() ?: 0)
                 } else {

@@ -3,6 +3,7 @@ package aegires.e2ee
 import android.app.Activity
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.SystemClock
@@ -53,6 +54,11 @@ internal object InlineVideo {
 
     fun status(): String = status
 
+    /** Sets the status text before a play starts, so an old result is never shown for a new tap. */
+    fun note(text: String) {
+        status = text
+    }
+
     /** [vw] x [vh] is the picture's pixel size (0 = unknown); its shape picks the right view. */
     fun start(activity: Activity, filePath: String, fileTitle: String, vw: Int, vh: Int) {
         runUi(activity) {
@@ -69,7 +75,7 @@ internal object InlineVideo {
                     return@runUi
                 }
                 show(activity, view, filePath, fileTitle)
-                status = "inline on " + view.javaClass.simpleName + " " + view.width + "x" + view.height
+                status = "inline on " + view.javaClass.name + " " + targetW + "x" + targetH
             } catch (t: Throwable) {
                 close()
                 status = "full screen: error " + t.javaClass.simpleName + " " + (t.message ?: "").take(60)
@@ -112,11 +118,13 @@ internal object InlineVideo {
             status = "full screen: no window"
             return null
         }
-        val x = TouchSpy.x.toInt()
-        val y = TouchSpy.y.toInt()
+        val origin = IntArray(2)
+        decor.getLocationOnScreen(origin)
+        val x = TouchSpy.x - origin[0]
+        val y = TouchSpy.y - origin[1]
         val deepest = deepestAt(decor, x, y)
         if (deepest == null) {
-            status = "full screen: no view at " + x + "," + y
+            status = "full screen: no view at " + x.toInt() + "," + y.toInt()
             return null
         }
         val min = dp(a, MIN_DP.toFloat())
@@ -129,11 +137,14 @@ internal object InlineVideo {
         var v: View? = deepest
         var depth = 0
         while (v != null && depth < 8) {
-            chain.add(v.javaClass.simpleName + " " + v.width + "x" + v.height)
-            val bigEnough = v.width >= min && v.height >= min
-            val screenSized = v.width * 100 >= sw * 95 && v.height * 10 >= sh * 7
+            val wr = winRect(v)
+            val rw = wr.width()
+            val rh = wr.height()
+            chain.add(v.javaClass.name + " " + rw.toInt() + "x" + rh.toInt() + (if (v.scaleY < 0f) " flipped" else ""))
+            val bigEnough = rw >= min && rh >= min
+            val screenSized = rw * 100 >= sw * 95 && rh * 10 >= sh * 7
             if (bigEnough && !screenSized) {
-                val ratio = v.width.toFloat() / v.height
+                val ratio = rw / rh
                 val shapeOk = want == 0f || Math.abs(ratio - want) <= want * 0.18f
                 if (shapeOk) return v
             }
@@ -141,20 +152,54 @@ internal object InlineVideo {
             depth++
         }
         val shape = if (want > 0f) "wanted ratio " + String.format(java.util.Locale.ROOT, "%.2f", want) else "shape unknown"
-        status = "full screen: no view with the picture's shape (" + shape + "): " + chain.take(5).joinToString("; ")
+        status = "full screen: no view with the picture's shape (" + shape + ") at " + x.toInt() + "," + y.toInt() + ": " + chain.take(5).joinToString("; ") + " [" + deepest.javaClass.superclass?.name + "]"
         return null
     }
 
-    /** The deepest visible view under a screen point; later siblings are drawn on top, so they are tried first. */
-    private fun deepestAt(v: View, x: Int, y: Int): View? {
+    /**
+     * Where a view is in the window, transforms included. The chat list is inverted (flipped), so a
+     * row's "top" and "left + width" no longer describe where it is drawn; the corners are pushed
+     * through every ancestor's matrix instead.
+     */
+    private fun winRect(v: View): RectF {
+        val pts = floatArrayOf(0f, 0f, v.width.toFloat(), 0f, v.width.toFloat(), v.height.toFloat(), 0f, v.height.toFloat())
+        var cur: View = v
+        var depth = 0
+        while (depth < 40) {
+            if (!cur.matrix.isIdentity) cur.matrix.mapPoints(pts)
+            val parent = cur.parent as? View
+            val dx = cur.left - (parent?.scrollX ?: 0)
+            val dy = cur.top - (parent?.scrollY ?: 0)
+            var i = 0
+            while (i < pts.size) {
+                pts[i] += dx
+                pts[i + 1] += dy
+                i += 2
+            }
+            if (parent == null) break
+            cur = parent
+            depth++
+        }
+        var l = pts[0]
+        var t = pts[1]
+        var rr = pts[0]
+        var bb = pts[1]
+        var i = 2
+        while (i < pts.size) {
+            l = Math.min(l, pts[i]); rr = Math.max(rr, pts[i])
+            t = Math.min(t, pts[i + 1]); bb = Math.max(bb, pts[i + 1])
+            i += 2
+        }
+        return RectF(l, t, rr, bb)
+    }
+
+    /** The deepest visible view under a point (window coordinates); later siblings are drawn on top, so they are tried first. */
+    private fun deepestAt(v: View, x: Float, y: Float): View? {
         if (v.visibility != View.VISIBLE || v === box) return null
-        val loc = IntArray(2)
-        v.getLocationOnScreen(loc)
-        if (x < loc[0] || y < loc[1] || x >= loc[0] + v.width || y >= loc[1] + v.height) return null
+        if (!winRect(v).contains(x, y)) return null
         if (v is ViewGroup) {
             for (i in v.childCount - 1 downTo 0) {
-                val c = v.getChildAt(i)
-                val d = deepestAt(c, x, y)
+                val d = deepestAt(v.getChildAt(i), x, y)
                 if (d != null) return d
             }
         }
@@ -169,8 +214,9 @@ internal object InlineVideo {
         title = fileTitle
         target = WeakReference(pic)
         host = WeakReference(a)
-        targetW = pic.width
-        targetH = pic.height
+        val rect0 = winRect(pic)
+        targetW = Math.round(rect0.width())
+        targetH = Math.round(rect0.height())
         hiddenSince = 0L
         dragging = false
 
@@ -259,7 +305,7 @@ internal object InlineVideo {
             corner(a, Gravity.TOP or Gravity.START),
         )
 
-        decor.addView(root, FrameLayout.LayoutParams(pic.width, pic.height, Gravity.TOP or Gravity.START))
+        decor.addView(root, FrameLayout.LayoutParams(targetW, targetH, Gravity.TOP or Gravity.START))
         box = root
         video = vv
         seek = bar
@@ -302,16 +348,17 @@ internal object InlineVideo {
      */
     private fun follow(root: FrameLayout, pic: View, decor: ViewGroup): Boolean {
         val vv = video
-        if (!pic.isAttachedToWindow || pic.width != targetW || pic.height != targetH) {
+        if (!pic.isAttachedToWindow) {
             close()
             return false
         }
-        val full = IntArray(2)
-        val decorLoc = IntArray(2)
-        pic.getLocationOnScreen(full)
-        decor.getLocationOnScreen(decorLoc)
+        val full = winRect(pic)
+        if (Math.abs(Math.round(full.width()) - targetW) > 2 || Math.abs(Math.round(full.height()) - targetH) > 2) {
+            close() // the chat re-used this view for something else
+            return false
+        }
         val vis = Rect()
-        val seen = pic.isShown && pic.getGlobalVisibleRect(vis) && vis.height() * 10 >= pic.height * 3
+        val seen = pic.isShown && pic.getGlobalVisibleRect(vis) && vis.height() * 10 >= full.height() * 3
         if (!seen) {
             // Scrolled away (or covered by another screen): pause and hide; give up after a while.
             root.visibility = View.INVISIBLE
@@ -326,10 +373,13 @@ internal object InlineVideo {
         }
         hiddenSince = 0L
         root.visibility = View.VISIBLE
-        root.translationX = (full[0] - decorLoc[0]).toFloat()
-        root.translationY = (full[1] - decorLoc[1]).toFloat()
+        root.translationX = full.left
+        root.translationY = full.top
         // Only the part of the picture that is on screen (not under the header or the message box).
-        root.clipBounds = Rect(vis.left - full[0], vis.top - full[1], vis.right - full[0], vis.bottom - full[1])
+        root.clipBounds = Rect(
+            Math.round(vis.left - full.left), Math.round(vis.top - full.top),
+            Math.round(vis.right - full.left), Math.round(vis.bottom - full.top),
+        )
         return true
     }
 
