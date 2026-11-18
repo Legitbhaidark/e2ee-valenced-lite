@@ -83,9 +83,14 @@ internal object SettingsScreen {
                 state = JSONObject(stateJson)
                 dialog?.dismiss()
                 events.clear()
-                val d = Dialog(a, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+                Glass.on = state.optJSONObject("values")?.optBoolean("liquidGlass", false) == true
+                val d = Dialog(a, if (Glass.on) android.R.style.Theme_Translucent_NoTitleBar else android.R.style.Theme_Black_NoTitleBar_Fullscreen)
                 d.setContentView(build(a, d))
                 d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                if (Glass.on && android.os.Build.VERSION.SDK_INT >= 31) {
+                    d.window?.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    d.window?.attributes?.blurBehindRadius = 60
+                }
                 d.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
                 d.setOnDismissListener {
                     if (dialog === d) {
@@ -142,7 +147,7 @@ internal object SettingsScreen {
     private fun build(a: Activity, d: Dialog): View {
         val root = LinearLayout(a)
         root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(BG)
+        root.setBackgroundColor(if (Glass.on) 0xB0101114.toInt() else BG)
 
         val bar = LinearLayout(a)
         bar.orientation = LinearLayout.HORIZONTAL
@@ -293,6 +298,7 @@ internal object SettingsScreen {
         val v = state.optJSONObject("values") ?: JSONObject()
         toggle(a, c, v, "encryptByDefault", "Encrypt outgoing messages by default (in chats without their own on/off setting)")
         toggle(a, c, v, "attachmentsExp", "Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats")
+        toggle(a, c, v, "liquidGlass", "Liquid glass look for the media players and this screen (frosted, see-through panels; on Android 12+ this screen also blurs what is behind it). Applies to players you open next and to this screen the next time you open it")
         toggle(a, c, v, "linkPreviews", "Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default")
 
         c.addView(label(a, "Encrypted files larger than this many MB show \"Tap to decrypt\" instead of downloading on their own (0 = always ask, default 25):", TEXT, 15f, false), top(a, 10f))
@@ -454,6 +460,7 @@ internal object SettingsScreen {
         sw.isChecked = values.optBoolean(key, false)
         sw.setOnCheckedChangeListener { _, checked ->
             values.put(key, checked)
+            if (key == "liquidGlass") Glass.on = checked
             events.add(JSONObject().put("t", "set").put("k", key).put("v", checked).toString())
         }
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -465,10 +472,14 @@ internal object SettingsScreen {
     internal fun card(a: Activity, title: String): LinearLayout {
         val l = LinearLayout(a)
         l.orientation = LinearLayout.VERTICAL
-        val bg = GradientDrawable()
-        bg.setColor(CARD)
-        bg.cornerRadius = dp(a, 8f).toFloat()
-        l.background = bg
+        if (Glass.on) {
+            l.background = Glass.drawable(dp(a, 14f).toFloat())
+        } else {
+            val bg = GradientDrawable()
+            bg.setColor(CARD)
+            bg.cornerRadius = dp(a, 8f).toFloat()
+            l.background = bg
+        }
         l.setPadding(dp(a, 12f), dp(a, 12f), dp(a, 12f), dp(a, 12f))
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(a, 12f)

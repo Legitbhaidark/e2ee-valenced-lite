@@ -77,6 +77,7 @@ internal object PlayerUi {
     }
 
     fun rounded(radius: Float, fill: Int): GradientDrawable {
+        if (Glass.on) return Glass.drawable(radius, fill == BLURPLE)
         val bg = GradientDrawable()
         bg.cornerRadius = radius
         bg.setColor(fill)
@@ -137,10 +138,14 @@ internal class PlayPauseView(ctx: Context) : View(ctx) {
     private var showPause = false
 
     init {
-        val bg = GradientDrawable()
-        bg.shape = GradientDrawable.OVAL
-        bg.setColor(PlayerUi.BLURPLE)
-        background = bg
+        if (Glass.on) {
+            background = Glass.drawable(0f, true, true)
+        } else {
+            val bg = GradientDrawable()
+            bg.shape = GradientDrawable.OVAL
+            bg.setColor(PlayerUi.BLURPLE)
+            background = bg
+        }
         paint.color = Color.WHITE
         paint.style = Paint.Style.FILL
     }
@@ -226,7 +231,7 @@ internal class PlayerControls(
         rightLabel.visibility = View.GONE
     }
     private val chipOn = PlayerUi.rounded(PlayerUi.dp(a, 12f).toFloat(), PlayerUi.BLURPLE)
-    private val chipOff = PlayerUi.rounded(PlayerUi.dp(a, 12f).toFloat(), 0xCC2B2D31.toInt())
+    private val chipOff = if (Glass.on) null else PlayerUi.rounded(PlayerUi.dp(a, 12f).toFloat(), 0xCC2B2D31.toInt())
 
     private fun d(v: Float): Int = PlayerUi.dp(a, v)
 
@@ -398,7 +403,7 @@ internal class PlayerControls(
     private fun refreshChips() {
         for ((s, c) in speedChips) {
             val want = if (Math.abs(s - speed) < 0.001f) chipOn else chipOff
-            if (c.background !== want) c.background = want
+            if (c.background !== want) c.background = want // null = no fill (glass: the panel behind shows)
         }
     }
 

@@ -5,6 +5,7 @@
 // There is no JS Argon2id any more: if the native half is not installed, fails its self-check or
 // errors, deriving a key fails with a clear message (stored keys keep working). The WebView engine
 // of the Kettu version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
+import { storage } from "../storage.ts";
 import { unscoped } from "../host.ts";
 import { getArgonEngine, setArgon2Offload } from "../crypto/kdf2.ts";
 import { base64Decode, base64Encode } from "../crypto/base64.ts";
@@ -152,6 +153,11 @@ export async function nativePlayMedia(path: string, title: string, inline = fals
 export async function nativeInlineStatus(): Promise<string> {
   const out = await callNative("inlinestatus", [], 3000);
   return typeof out === "string" ? out : String(out ?? "");
+}
+
+/** Turns the liquid glass look of the native players and screens on or off. */
+export async function nativeGlass(on: boolean): Promise<void> {
+  await callNative("glass", [on ? "1" : "0"], 3000);
 }
 
 /** Starts noting where the screen is touched (needed to find the picture a video plays on). */
@@ -310,6 +316,7 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
+    void nativeGlass(storage.liquidGlass === true).catch(() => {});
     void nativeTouchSpy().catch(() => {}); // the UI is up by now, so the window can be wrapped
     diag.argon2Engine = await readArgon2Engine();
     void checkV2();

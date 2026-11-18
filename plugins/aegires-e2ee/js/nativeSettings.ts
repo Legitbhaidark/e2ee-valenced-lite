@@ -1,7 +1,7 @@
 // The settings screen is drawn by the native half (Kotlin SettingsScreen). This file keeps the real
 // values (storage) and does the actions that need JS: it opens the screen with the current values,
 // then polls what the user did (a toggle, "Set global key", ...) and applies it.
-import { nativeReady, nativeSettingsOpen, nativeSettingsTake, nativeSettingsUpdate } from "./engine/engine.ts";
+import { nativeGlass, nativeReady, nativeSettingsOpen, nativeSettingsTake, nativeSettingsUpdate } from "./engine/engine.ts";
 import { storage, storageNote } from "./storage.ts";
 import { notify } from "./notify.ts";
 import { MAX_KDF_MIB, MAX_KDF_PASSES, PRESETS, applyDevKdf, clearGlobalKey, getPreset, hasGlobalKey, listChannelConfigs, passwordRule, removeChannelConfig, setChannelEnabled, setChannelPassword, setGlobalPassword, setPreset } from "./state.ts";
@@ -18,7 +18,7 @@ import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "./about.ts";
 const POLL_MS = 300;
 
 /** The on/off settings the screen may change. "debug" exists in dev builds only. */
-export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "padme", ...(DEV_BUILD ? ["debug"] : [])];
+export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "liquidGlass", "padme", ...(DEV_BUILD ? ["debug"] : [])];
 const DEFAULT_ON = new Set(["inlineVideo", "encButton", "padme"]); // a missing value means on
 
 const toggleValue = (k: string): boolean => (DEFAULT_ON.has(k) ? storage[k] !== false : !!storage[k]);
@@ -94,6 +94,7 @@ export async function handleEvent(ev: any): Promise<void> {
       } else if (TOGGLES.includes(ev.k)) {
         storage[ev.k] = ev.v === true;
         if (ev.k === "linkPreviews" && ev.v !== true) clearLinkPreviews();
+        if (ev.k === "liquidGlass") void nativeGlass(ev.v === true).catch(() => {});
       }
     } else if (ev?.t === "setPreset") {
       const i = Number(ev.i);

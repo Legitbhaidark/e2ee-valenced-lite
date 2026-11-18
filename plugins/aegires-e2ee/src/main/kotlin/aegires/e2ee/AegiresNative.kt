@@ -234,6 +234,14 @@ val aegiresNative = plugin {
             "ok"
         }
 
+        // Liquid glass look on/off ("1" / "0"), see Glass.kt. Returns "ok".
+        registerNativeMethod("aegires.glass") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val on: String by args.string()
+            Glass.on = on == "1"
+            "ok"
+        }
+
         // What the in-chat player did for the last tap, for Diagnostics.
         registerNativeMethod("aegires.inlinestatus") { _ -> InlineVideo.status() }
 

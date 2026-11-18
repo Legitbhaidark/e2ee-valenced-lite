@@ -4,6 +4,9 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev5
+- New setting "Liquid glass look" (off by default): frosted, see-through panels with a bright edge on the media players and the settings screen, with a real background blur on Android 12+ in settings.
+
 ## 0.1.34-dev4
 - Picture-in-picture (video only): the window now shrinks only after the video is on screen, so the app itself is no longer what ends up in the small window.
 
