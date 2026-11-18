@@ -143,11 +143,6 @@ export async function nativeMediaInfo(path: string, kind: "image" | "video"): Pr
   return m ? { w: Number(m[1]), h: Number(m[2]) } : null;
 }
 
-/** Opens the native full-screen player on a decrypted video file (absolute path). */
-export async function nativePlayVideo(path: string): Promise<void> {
-  await callNative("playvideo", [path], 5000);
-}
-
 /** Opens the native full-screen player on a decrypted video or audio file. The title is shown for audio. */
 export async function nativePlayMedia(path: string, title: string, inline = false, w = 0, h = 0): Promise<void> {
   await callNative("playmedia", [path, title, inline ? "inline" : "full", String(Math.round(w) || 0), String(Math.round(h) || 0)], 5000);
@@ -334,22 +329,3 @@ export function stopNative(): void {
 }
 
 export const nativeReady = (): boolean => nativeOk;
-
-// ---- stand-ins for the Kettu WebView engine (attachments are not ported yet) ----
-export const engineReady = (): boolean => false;
-
-export const waitEngine = async (_ms?: number): Promise<boolean> => false;
-
-export function call<T>(_op: string, _args?: unknown, _timeoutMs?: number): Promise<T> {
-  return Promise.reject(new Error("WebView engine is not in this build"));
-}
-
-export function mountChatHost(): () => void {
-  return () => {};
-}
-
-export function stopEngine(): void {}
-
-export function EngineHost(): null {
-  return null;
-}

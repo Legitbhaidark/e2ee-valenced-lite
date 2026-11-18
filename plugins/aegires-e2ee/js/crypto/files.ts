@@ -64,23 +64,7 @@ export function splitSizeTag(body: string): { width: number; height: number; tex
 
 // ---------------------------------------------------------------- Discord CDN URLs
 
-const ATT_RE = /\/attachments\/(\d+)\/(\d+)\/([^/?#]+)/;
 const DROP_PARAMS = new Set(["width", "height", "format", "quality", "size", "animated"]);
-
-export interface AttachmentRef {
-  channelId: string;
-  attachmentId: string;
-  filename: string;
-}
-
-/** Parses a Discord CDN/media-proxy attachment URL. Null if it is not one. */
-export function parseAttachmentUrl(url: string): AttachmentRef | null {
-  const m = ATT_RE.exec(url);
-  if (!m) return null;
-  let filename = m[3];
-  try { filename = decodeURIComponent(filename); } catch {}
-  return { channelId: m[1], attachmentId: m[2], filename };
-}
 
 /** Raw-file URL: cdn host, resize params removed, signature params (ex/is/hm) kept. */
 export function rawCdnUrl(url: string): string {

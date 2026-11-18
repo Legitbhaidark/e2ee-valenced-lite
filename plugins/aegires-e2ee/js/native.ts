@@ -108,15 +108,6 @@ export async function writeCacheFileBase64(name: string, b64: string): Promise<s
   return "file://" + path;
 }
 
-/** Best-effort delete of files written by writeCacheFile. */
-export function removeCacheFiles(names: string[]): void {
-  const fm = fileModule();
-  if (!fm || typeof fm.removeFile !== "function") return;
-  for (const n of names) {
-    try { Promise.resolve(fm.removeFile("cache", `${DIR}/${n}`)).catch(() => {}); } catch {}
-  }
-}
-
 /** Unique-enough temp name (not security relevant: it only has to avoid collisions). */
 export function tempName(ext: string): string {
   return `up_${Date.now()}_${Math.floor(Math.random() * 1e9)}${ext ? "." + ext : ""}`;

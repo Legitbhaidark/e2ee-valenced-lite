@@ -1,9 +1,7 @@
 // /e2ee on | off | status  - per-chat encryption switch.
-// 1. Real slash command (patches Discord's getBuiltInCommands; best effort).
-// 2. Typed "/e2ee on" caught in the sendMessage hook (works even if 1 fails; never sent).
+// Typed "\e2ee on" (or "/e2ee on") is caught in the sendMessage hook and never sent.
+// (A real slash command crashed Discord's command search and was removed.)
 import { notify } from "./notify.ts";
-import { diag } from "./diag.ts";
-import { unscoped } from "./host.ts";
 import { canSend, isEncryptionOn, isForced, setChannelEnabled } from "./state.ts";
 
 const USAGE = "Usage: \\e2ee on | off | status";
@@ -36,41 +34,3 @@ export function interceptTyped(channelId: string, content: unknown): boolean {
   return true;
 }
 
-const choice = (v: string) => ({ name: v, displayName: v, value: v });
-
-export function installSlashCommand(): () => void {
-  const { finders } = unscoped().modules;
-  const [mod] = finders.lookupModule(finders.filters.withProps("getBuiltInCommands"));
-  if (!mod || typeof mod.getBuiltInCommands !== "function") throw new Error("getBuiltInCommands not found");
-  const cmd = {
-    id: "aegires-e2ee-cmd",
-    name: "e2ee",
-    displayName: "e2ee",
-    description: "Turn Aegires encryption on or off for this chat",
-    displayDescription: "Turn Aegires encryption on or off for this chat",
-    type: 1,
-    inputType: 1,
-    applicationId: "-1",
-    options: [
-      {
-        name: "mode",
-        displayName: "mode",
-        description: "on, off or status",
-        displayDescription: "on, off or status",
-        type: 3,
-        required: true,
-        choices: [choice("on"), choice("off"), choice("status")],
-      },
-    ],
-    execute: (args: any[], ctx: any) => {
-      const mode = String(args?.find?.((a: any) => a?.name === "mode")?.value ?? "status");
-      runE2ee(mode, String(ctx?.channel?.id ?? ""));
-    },
-  };
-  const un = unscoped().patcher.after(mod, "getBuiltInCommands", (result: any) => {
-    if (Array.isArray(result) && !result.some((c: any) => c?.id === cmd.id)) return [...result, cmd];
-    return result;
-  });
-  diag.installed["slash command"] = "ok";
-  return un;
-}

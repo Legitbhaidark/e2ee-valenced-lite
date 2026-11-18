@@ -13,10 +13,6 @@ export const MASTER_LEN = 32;
 
 const USER_KEY_SALT = "dcenc2|user-key|v1";
 
-export function forcedContext(channelId: string): string {
-  return "forced|" + channelId;
-}
-
 function normalize(password: string): string {
   try {
     return password.normalize("NFKC");

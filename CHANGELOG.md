@@ -4,6 +4,10 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.33-dev3
+- Small clean-up: removed about 140 lines of dead code (the abandoned slash-command installer, unused WebView-engine stand-ins, unused crypto and URL helpers, unused imports).
+- The header button asks the native side why it is hidden every 2 s instead of every poll, and no longer allocates objects on every frame.
+
 ## 0.1.33-dev2
 - The header button is glued to its place: it follows the header icons frame by frame (also while a screen slides) and disappears in the same frame the header is gone.
 - The button is not shown when the chat has no key set.

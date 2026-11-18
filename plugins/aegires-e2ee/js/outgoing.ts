@@ -6,12 +6,12 @@
 import { notify } from "./notify.ts";
 import { RN } from "./rt.ts";
 import { looksEncrypted } from "./crypto/wire.ts";
-import { MAX_FILE_BYTES, encryptedFileName, extOf, imageDims, imageMimeFor, makeSizeTags, mimeFor, videoDims } from "./crypto/files.ts";
+import { MAX_FILE_BYTES, imageDims, imageMimeFor, makeSizeTags, mimeFor, videoDims } from "./crypto/files.ts";
 import { storage } from "./storage.ts";
-import { encryptFile, encryptMessage, maxPlaintextBytes, utf8Length } from "./crypto/v2.ts";
+import { encryptMessage, maxPlaintextBytes, utf8Length } from "./crypto/v2.ts";
 import { getSendKeyV2, getSendPreset, isEncryptionOn } from "./state.ts";
 import { getSelfId } from "./self.ts";
-import { readUri, readUriBase64, tempName, writeCacheFile, writeCacheFileBase64 } from "./native.ts";
+import { readUriBase64, tempName } from "./native.ts";
 import { base64Decode, base64Encode } from "./crypto/base64.ts";
 import { cacheDir, nativeMediaInfo, nativeRandomName, nativeReady, nativeSealBytes, nativeSealFile, type FileSeal } from "./engine/engine.ts";
 import { diag } from "./diag.ts";

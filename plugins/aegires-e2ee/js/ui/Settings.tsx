@@ -7,12 +7,12 @@
 // Built from plain React Native primitives, because Discord's own form components get renamed between
 // versions. Colors assume Discord's dark theme.
 import { React, comp, reactDiagnostics } from "../rt.ts";
-import { storage, storageNote } from "../storage.ts";
+import { storageNote } from "../storage.ts";
 import { notify as showToast } from "../notify.ts";
 import { getPreset, hasGlobalKey, passwordRule, setGlobalPassword } from "../state.ts";
 import { getSelfId } from "../self.ts";
 import { diagLines } from "../diag.ts";
-import { EngineHost, nativeReady } from "../engine/engine.ts";
+import { nativeReady } from "../engine/engine.ts";
 import { openNativeSettings } from "../nativeSettings.ts";
 import { DEV_BUILD } from "../about.ts";
 import { unscoped } from "../host.ts";
@@ -75,7 +75,6 @@ function Fallback(props: { why: string; retry: () => void }) {
   const [pct, setPct] = React.useState(-1);
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
-      <EngineHost />
       <Card title="Settings" hint={props.why || "The native settings screen could not be opened."}>
         <Button label="Try again" onPress={props.retry} />
         {!nativeReady() ? (

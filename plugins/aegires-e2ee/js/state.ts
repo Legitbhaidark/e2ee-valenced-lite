@@ -180,10 +180,6 @@ export function checkPassword(password: string): string | null {
 
 let deriving = false;
 
-export function isDeriving(): boolean {
-  return deriving;
-}
-
 /** Derives the master key (hex) for a password. Argon2id is the slow part (progress 0..1). */
 async function derive(password: string, onProgress?: (fraction: number) => void): Promise<string> {
   const problem = checkPassword(password);

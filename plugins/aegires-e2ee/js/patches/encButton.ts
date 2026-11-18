@@ -16,6 +16,7 @@ import { notify } from "../notify.ts";
 import { canSend, isEncryptionOn, isForced, setChannelEnabled } from "../state.ts";
 
 const POLL_MS = 300; // presses and the open chat are checked this often
+const STATUS_MS = 2000; // the "why is it hidden" line for Diagnostics is asked for this often, not on every poll
 const REASSERT_MS = 1500; // the state is re-sent now and then (the overlay is dropped when the activity is recreated)
 
 type BtnState = "on" | "off" | "locked" | "hide";
@@ -43,6 +44,8 @@ export function pressed(channelId: string): string {
 export function installEncButton(): () => void {
   let last: BtnState | "" = "";
   let lastSentAt = 0;
+  let statusAt = 0;
+  let statusText = "";
   let busy = false;
   let stopped = false;
 
@@ -72,7 +75,12 @@ export function installEncButton(): () => void {
         last = want;
         lastSentAt = now;
       }
-      const why = want === "hide" ? "" : await nativeEncButtonStatus().catch(() => "");
+      if (want === "hide") statusText = "";
+      else if (now - statusAt >= STATUS_MS) {
+        statusText = await nativeEncButtonStatus().catch(() => "");
+        statusAt = now;
+      }
+      const why = statusText;
       diag.installed["encryption button"] = `${want}${channelId ? "" : " (no chat open)"}${why ? " - " + why : ""}`;
     } catch (e) {
       diag.installed["encryption button"] = "native call failed: " + String((e as any)?.message ?? e).split("\n")[0].slice(0, 60);

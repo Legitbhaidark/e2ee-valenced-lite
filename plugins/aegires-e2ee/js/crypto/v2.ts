@@ -67,11 +67,6 @@ export function utf8Length(s: string): number {
   return utf8Encode(s).length;
 }
 
-export function fileOverhead(p: Preset, plainSize: number): number {
-  const chunks = Math.max(1, Math.ceil(plainSize / FILE_CHUNK));
-  return 1 + SALT_LEN + chunks * p.tagBytes;
-}
-
 // ---------------------------------------------------------------- helpers
 
 function concat(...parts: Uint8Array[]): Uint8Array {
@@ -194,12 +189,6 @@ export function messagePreset(wire: string): Preset | null {
 
 /** One AES-GCM operation of a file (one 64 KiB chunk). */
 export type GcmJob = { key: Uint8Array; nonce: Uint8Array; aad: Uint8Array; data: Uint8Array; tagLen: number };
-/** Runs many GCM jobs at once, e.g. WebCrypto in the WebView engine (src/engine/page.ts). */
-export interface GcmBatch {
-  seal(jobs: GcmJob[]): Promise<Uint8Array[]>;
-  open(jobs: GcmJob[]): Promise<Array<Uint8Array | null>>;
-}
-
 /** Output buffer with header + salt filled in, and one seal job per chunk (written at at[i]). */
 function planSeal(plain: Uint8Array, master: Uint8Array, preset: Preset, channelId: string, senderId: string): { out: Uint8Array; jobs: GcmJob[]; at: number[] } {
   if (!channelId || !senderId) throw new Error("channel/sender id missing");
@@ -267,31 +256,6 @@ export function decryptFile(wire: Uint8Array, master: Uint8Array, channelId: str
     for (let c = 0; c < p.jobs.length; c++) {
       const j = p.jobs[c];
       const plain = gcmOpen(j.key, j.nonce, j.aad, j.data, j.tagLen);
-      if (!plain) return null;
-      p.out.set(plain, c * FILE_CHUNK);
-    }
-    return p.out;
-  } catch {
-    return null;
-  }
-}
-
-/** encryptFile with the AES-GCM work done by `batch`. */
-export async function encryptFileWith(batch: GcmBatch, plain: Uint8Array, master: Uint8Array, preset: Preset, channelId: string, senderId: string): Promise<Uint8Array> {
-  const p = planSeal(plain, master, preset, channelId, senderId);
-  const sealed = await batch.seal(p.jobs);
-  sealed.forEach((x, i) => p.out.set(x, p.at[i]));
-  return p.out;
-}
-
-/** decryptFile with the AES-GCM work done by `batch`. */
-export async function decryptFileWith(batch: GcmBatch, wire: Uint8Array, master: Uint8Array, channelId: string, senderId: string): Promise<Uint8Array | null> {
-  try {
-    const p = planOpen(wire, master, channelId, senderId);
-    if (!p) return null;
-    const opened = await batch.open(p.jobs);
-    for (let c = 0; c < opened.length; c++) {
-      const plain = opened[c];
       if (!plain) return null;
       p.out.set(plain, c * FILE_CHUNK);
     }

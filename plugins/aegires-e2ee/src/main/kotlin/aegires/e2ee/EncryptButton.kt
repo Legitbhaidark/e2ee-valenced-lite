@@ -51,6 +51,9 @@ internal object EncryptButton {
     private var composerScanAt = 0L
     private var preDraw: ViewTreeObserver.OnPreDrawListener? = null
     private var lastFull = 0L // last time place() ran the full checks
+    private val screenRect = Rect() // reused every frame: follow() must not allocate
+    private val tmpLoc = IntArray(2)
+    private val tmpDecorLoc = IntArray(2)
     private var state = "hide"
     private var placing = false
     private var why = "not started" // why the button is shown or hidden right now (Diagnostics)
@@ -272,7 +275,8 @@ internal object EncryptButton {
         if (state == "hide" || placing) return
         val decor = a.window.decorView as? ViewGroup ?: return
         val icon = searchIcon?.get()
-        val ok = icon != null && isHeaderIcon(icon, Rect(0, 0, a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels), dp(a, MAX_ICON_DP.toFloat()), ICON_WORDS)
+        screenRect.set(0, 0, a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels)
+        val ok = icon != null && isHeaderIcon(icon, screenRect, dp(a, MAX_ICON_DP.toFloat()), ICON_WORDS)
         if (!ok) {
             if (tv.visibility == View.VISIBLE) tv.visibility = View.INVISIBLE
         } else if (tv.visibility == View.VISIBLE) {
@@ -282,12 +286,10 @@ internal object EncryptButton {
     }
 
     private fun position(tv: View, icon: View, decor: ViewGroup, a: Activity) {
-        val iconLoc = IntArray(2)
-        val decorLoc = IntArray(2)
-        icon.getLocationOnScreen(iconLoc)
-        decor.getLocationOnScreen(decorLoc)
-        val x = iconLoc[0] - decorLoc[0] - dp(a, 4f) - tv.measuredWidth
-        val y = iconLoc[1] - decorLoc[1] + (icon.height - tv.measuredHeight) / 2
+        icon.getLocationOnScreen(tmpLoc)
+        decor.getLocationOnScreen(tmpDecorLoc)
+        val x = tmpLoc[0] - tmpDecorLoc[0] - dp(a, 4f) - tv.measuredWidth
+        val y = tmpLoc[1] - tmpDecorLoc[1] + (icon.height - tv.measuredHeight) / 2
         if (tv.translationX != x.toFloat()) tv.translationX = x.toFloat()
         if (tv.translationY != y.toFloat()) tv.translationY = y.toFloat()
     }
