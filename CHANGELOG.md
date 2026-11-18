@@ -4,6 +4,9 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev10
+- Liquid glass for the video and audio seek bar: a clear glass track, a blurple glass played part and a round glass knob. The time counter now sits in a glass pill.
+
 ## 0.1.34-dev9
 - The wallpaper now only shows in chats, behind the messages (between the header and the message box). The DM list, servers and other screens are left alone.
 

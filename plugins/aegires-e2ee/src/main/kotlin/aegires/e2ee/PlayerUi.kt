@@ -89,7 +89,37 @@ internal object PlayerUi {
         return GradientDrawable(o, intArrayOf(0xAA000000.toInt(), 0x00000000))
     }
 
+    /**
+     * Liquid glass slider: the track is a clear glass capsule, the played part a blurple glass capsule
+     * and the knob a round blurple glass bead. (The default look is the plain tinted slider below.)
+     */
+    private fun glassSeek(sb: SeekBar) {
+        val dens = sb.resources.displayMetrics.density
+        val h = (8f * dens).toInt()
+        val knob = (20f * dens).toInt()
+        val radius = h / 2f
+        val progress = android.graphics.drawable.ClipDrawable(
+            Glass.drawable(radius, accent = true), Gravity.START, android.graphics.drawable.ClipDrawable.HORIZONTAL,
+        )
+        val layers = android.graphics.drawable.LayerDrawable(arrayOf(Glass.drawable(radius), progress))
+        layers.setId(0, android.R.id.background)
+        layers.setId(1, android.R.id.progress)
+        for (i in 0..1) {
+            layers.setLayerHeight(i, h)
+            layers.setLayerGravity(i, Gravity.CENTER_VERTICAL or Gravity.FILL_HORIZONTAL)
+        }
+        sb.progressDrawable = layers
+        val thumb = android.graphics.drawable.LayerDrawable(arrayOf(Glass.drawable(0f, accent = true, oval = true)))
+        thumb.setLayerSize(0, knob, knob)
+        sb.thumb = thumb
+        sb.thumbOffset = 0
+    }
+
     fun tint(sb: SeekBar) {
+        if (Glass.on) {
+            glassSeek(sb)
+            return
+        }
         sb.progressTintList = ColorStateList.valueOf(BLURPLE)
         sb.thumbTintList = ColorStateList.valueOf(BLURPLE)
         sb.progressBackgroundTintList = ColorStateList.valueOf(0x55FFFFFF)
@@ -325,7 +355,15 @@ internal class PlayerControls(
         time.setTextColor(0xFFE3E5E8.toInt())
         time.textSize = 12f
         time.text = "0:00 / 0:00"
-        row.addView(time, LinearLayout.LayoutParams(0, wrap, 1f))
+        if (Glass.on) {
+            // Liquid glass: the time sits in a glass pill instead of floating on the picture.
+            time.background = Glass.drawable(d(10f).toFloat())
+            time.setPadding(d(10f), d(3f), d(10f), d(3f))
+            row.addView(time, LinearLayout.LayoutParams(wrap, wrap))
+            row.addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
+        } else {
+            row.addView(time, LinearLayout.LayoutParams(0, wrap, 1f))
+        }
         chip = PlayerUi.pill(a, "1x") {
             pipPanel.visibility = View.GONE
             speedPanel.visibility = if (speedPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE

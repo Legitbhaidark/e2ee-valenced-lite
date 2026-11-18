@@ -163,7 +163,16 @@ internal object InlineAudio {
         time.textSize = 12f
         time.gravity = Gravity.CENTER
         foot.addView(back, LinearLayout.LayoutParams(wrap, wrap))
-        foot.addView(time, LinearLayout.LayoutParams(0, wrap, 1f))
+        if (Glass.on) {
+            // Liquid glass: the time sits in a glass pill, centred between the two skip buttons.
+            time.background = Glass.drawable(d(10f).toFloat())
+            time.setPadding(d(10f), d(3f), d(10f), d(3f))
+            foot.addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
+            foot.addView(time, LinearLayout.LayoutParams(wrap, wrap))
+            foot.addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
+        } else {
+            foot.addView(time, LinearLayout.LayoutParams(0, wrap, 1f))
+        }
         foot.addView(fwd, LinearLayout.LayoutParams(wrap, wrap))
         col.addView(foot, LinearLayout.LayoutParams(match, wrap))
 
