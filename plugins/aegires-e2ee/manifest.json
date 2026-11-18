@@ -4,7 +4,7 @@
 	"name": "Aegires E2EE",
 	"description": "End-to-end encryption for Discord on Valenced, compatible with the Aegires Android app. Encrypts and decrypts text messages, images, GIFs, videos and files (up to 1 GiB) with a shared password, using Aegires v2 (Argon2id, AES-GCM). Per-chat on/off with /e2ee, a lock icon next to decrypted messages, a native video player, and a native module (C Argon2id with Kotlin/Java fallback) that makes key derivation much faster than plain JS.",
 	"author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
-	"version": "0.1.34-dev3",
+	"version": "0.1.34-dev4",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

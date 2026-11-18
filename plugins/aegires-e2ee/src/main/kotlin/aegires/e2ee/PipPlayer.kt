@@ -35,6 +35,7 @@ internal object PipPlayer {
         root.setBackgroundColor(Color.BLACK)
         root.isClickable = true
         val vv = VideoView(a)
+        vv.setZOrderMediaOverlay(true)
         vv.setVideoPath(path)
         vv.setOnPreparedListener { mp ->
             if (startMs > 0) vv.seekTo(startMs)
@@ -50,14 +51,29 @@ internal object PipPlayer {
         video = vv
         started = System.currentTimeMillis()
         wasPip = false
-        return try {
-            val b = PictureInPictureParams.Builder()
-            if (vw > 0 && vh > 0) {
-                // Android only accepts shapes between 1:2.39 and 2.39:1.
-                val r = (vw.toFloat() / vh).coerceIn(0.43f, 2.38f)
-                b.setAspectRatio(Rational((r * 1000).toInt(), 1000))
+        // The window may only shrink once the black layer with the picture is really on screen,
+        // otherwise Android shrinks the app itself. So: wait for the first drawn frame (or 1.5 s).
+        var entered = false
+        val go = Runnable {
+            if (entered || layer !== root) return@Runnable
+            entered = true
+            val ok = try {
+                val b = PictureInPictureParams.Builder()
+                if (vw > 0 && vh > 0) {
+                    // Android only accepts shapes between 1:2.39 and 2.39:1.
+                    val r = (vw.toFloat() / vh).coerceIn(0.43f, 2.38f)
+                    b.setAspectRatio(Rational((r * 1000).toInt(), 1000))
+                }
+                a.enterPictureInPictureMode(b.build())
+            } catch (_: Throwable) {
+                false
             }
-            if (!a.enterPictureInPictureMode(b.build())) throw IllegalStateException("refused")
+            if (!ok) {
+                close()
+                android.widget.Toast.makeText(a, "Picture-in-picture is not available here", android.widget.Toast.LENGTH_SHORT).show()
+                return@Runnable
+            }
+            started = System.currentTimeMillis()
             root.postDelayed(object : Runnable {
                 override fun run() {
                     if (layer !== root) return
@@ -71,11 +87,13 @@ internal object PipPlayer {
                     root.postDelayed(this, 300L)
                 }
             }, 300L)
-            true
-        } catch (_: Throwable) {
-            close()
+        }
+        vv.setOnInfoListener { _, what, _ ->
+            if (what == android.media.MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) root.post(go)
             false
         }
+        root.postDelayed(go, 1500L)
+        return true
     }
 
     /** Whole-app picture-in-picture: the app window itself shrinks, nothing is put over it. */

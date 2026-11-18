@@ -4,6 +4,9 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev4
+- Picture-in-picture (video only): the window now shrinks only after the video is on screen, so the app itself is no longer what ends up in the small window.
+
 ## 0.1.34-dev3
 - Players: the play / pause button is now drawn (white symbol on blurple) so it no longer shows as an orange emoji.
 - Players: the -10 / +10 buttons are gone; double-tap the left / right half of the video to jump 10 s, keep tapping to jump more (-20 s, +30 s ...), like YouTube.
