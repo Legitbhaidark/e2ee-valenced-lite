@@ -4,6 +4,10 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev8
+- Richer liquid glass: the edge now catches light on two corners like a thick glass pane, with a bright line under the top edge and a soft glow. The green "E2EE on" button and the players use it too. With Soft glass and a wallpaper, the settings cards bend the picture at their edges on Android 13+.
+- New: show your wallpaper behind Discord itself (Settings > Appearance), with Subtle / Medium / Strong and an optional blur. Best with a darker wallpaper. It is a see-through layer on top of Discord (blended with "screen"), so no Discord screen is changed.
+
 ## 0.1.34-dev6
 - New setting "Soft glass" (heavier, with a warning): blurred wallpaper behind the settings cards and a stronger blur behind the screen on Android 12+. The blur is made once from your picture, not live.
 - New "Appearance" card in settings: choose (or remove) a wallpaper for the settings screen.

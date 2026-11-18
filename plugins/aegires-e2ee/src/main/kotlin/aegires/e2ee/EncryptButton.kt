@@ -243,22 +243,23 @@ internal object EncryptButton {
     private fun style() {
         val tv = view ?: return
         val a = host?.get() ?: return
-        val bg = GradientDrawable()
-        bg.cornerRadius = dp(a, 12f).toFloat()
-        when (state) {
-            "on", "locked" -> {
+        val on = state == "on" || state == "locked"
+        tv.text = if (on) LABEL_ON else LABEL_OFF
+        tv.setTextColor(if (on) Color.WHITE else 0xFFB5BAC1.toInt())
+        if (Glass.on) {
+            // Liquid glass look: a green glass pill when on, a clear one when off.
+            tv.background = Glass.drawable(dp(a, 12f).toFloat(), tint = if (on) 0xFF23A55A.toInt() else 0)
+        } else {
+            val bg = GradientDrawable()
+            bg.cornerRadius = dp(a, 12f).toFloat()
+            if (on) {
                 bg.setColor(0xFF23A55A.toInt())
-                tv.setTextColor(Color.WHITE)
-                tv.text = LABEL_ON
-            }
-            else -> {
+            } else {
                 bg.setColor(0x33808080)
                 bg.setStroke(dp(a, 1f), 0xFF80848E.toInt())
-                tv.setTextColor(0xFFB5BAC1.toInt())
-                tv.text = LABEL_OFF
             }
+            tv.background = bg
         }
-        tv.background = bg
         tv.alpha = if (state == "locked") 0.85f else 1f
     }
 

@@ -36,6 +36,7 @@ export function initStorage(): void {
   storage.channels ??= {};
   storage.encryptByDefault ??= false;
   storage.showLock ??= true;
+  storage.wallpaperStrength ??= 2; // wallpaper behind Discord: 1 subtle, 2 medium, 3 strong
   storage.attachmentsExp ??= false; // experimental encrypted attachments, opt-in
   storage.autoDecryptMB ??= 25; // encrypted files above this size (MB) show "Tap to decrypt"; 0 = always ask
   storage.linkPreviews ??= false; // link previews for decrypted messages: this phone contacts the linked site, so opt-in

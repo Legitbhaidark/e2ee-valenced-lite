@@ -243,6 +243,16 @@ val aegiresNative = plugin {
             "ok"
         }
 
+        // Wallpaper behind Discord itself: args on ("0"/"1"), blur ("0"/"1"), strength ("1".."3"), see AppWallpaper.kt. Returns "ok".
+        registerNativeMethod("aegires.appwallpaper") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val on: String by args.string()
+            val blur: String by args.string()
+            val strength: String by args.string()
+            withAppActivity { AppWallpaper.configure(on == "1", blur == "1", strength.toIntOrNull() ?: 2, it) }
+            "ok"
+        }
+
         // What the in-chat player did for the last tap, for Diagnostics.
         registerNativeMethod("aegires.inlinestatus") { _ -> InlineVideo.status() }
 
@@ -316,6 +326,7 @@ val aegiresNative = plugin {
         InlineAudio.close()
         TouchSpy.shutdown()
         EncryptButton.shutdown()
+        AppWallpaper.shutdown()
         log.i("Aegires native crypto unloaded")
     }
 }

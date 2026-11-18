@@ -1,7 +1,7 @@
 // The settings screen is drawn by the native half (Kotlin SettingsScreen). This file keeps the real
 // values (storage) and does the actions that need JS: it opens the screen with the current values,
 // then polls what the user did (a toggle, "Set global key", ...) and applies it.
-import { nativeGlass, nativeReady, nativeSettingsOpen, nativeSettingsTake, nativeSettingsUpdate } from "./engine/engine.ts";
+import { applyAppWallpaper, nativeGlass, nativeReady, nativeSettingsOpen, nativeSettingsTake, nativeSettingsUpdate } from "./engine/engine.ts";
 import { storage, storageNote } from "./storage.ts";
 import { notify } from "./notify.ts";
 import { MAX_KDF_MIB, MAX_KDF_PASSES, PRESETS, applyDevKdf, clearGlobalKey, getPreset, hasGlobalKey, listChannelConfigs, passwordRule, removeChannelConfig, setChannelEnabled, setChannelPassword, setGlobalPassword, setPreset } from "./state.ts";
@@ -18,7 +18,7 @@ import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "./about.ts";
 const POLL_MS = 300;
 
 /** The on/off settings the screen may change. "debug" exists in dev builds only. */
-export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "liquidGlass", "softGlass", "padme", ...(DEV_BUILD ? ["debug"] : [])];
+export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "liquidGlass", "softGlass", "appWallpaper", "wallpaperBlur", "padme", ...(DEV_BUILD ? ["debug"] : [])];
 const DEFAULT_ON = new Set(["inlineVideo", "encButton", "padme"]); // a missing value means on
 
 const toggleValue = (k: string): boolean => (DEFAULT_ON.has(k) ? storage[k] !== false : !!storage[k]);
@@ -76,6 +76,7 @@ export function snapshot(): Record<string, unknown> {
     chats: chatList(),
     ...(DEV_BUILD ? { dev: devSnapshot() } : {}),
     autoMb: Number(storage.autoDecryptMB ?? 25),
+    wallpaperStrength: Number(storage.wallpaperStrength ?? 2),
     isDev: DEV_BUILD,
     version: PLUGIN_VERSION,
     build: BUILD_ID,
@@ -91,9 +92,13 @@ export async function handleEvent(ev: any): Promise<void> {
       if (ev.k === "autoDecryptMB") {
         const digits = String(ev.v ?? "").replace(/[^0-9]/g, "").slice(0, 4);
         storage.autoDecryptMB = digits === "" ? 25 : Number(digits);
+      } else if (ev.k === "wallpaperStrength") {
+        storage.wallpaperStrength = Math.min(3, Math.max(1, Math.round(Number(ev.v)) || 2));
+        applyAppWallpaper();
       } else if (TOGGLES.includes(ev.k)) {
         storage[ev.k] = ev.v === true;
         if (ev.k === "linkPreviews" && ev.v !== true) clearLinkPreviews();
+        if (ev.k === "appWallpaper" || ev.k === "wallpaperBlur") applyAppWallpaper();
         if (ev.k === "liquidGlass" || ev.k === "softGlass") void nativeGlass(storage.liquidGlass === true ? (storage.softGlass === true ? 2 : 1) : 0).catch(() => {});
       }
     } else if (ev?.t === "setPreset") {

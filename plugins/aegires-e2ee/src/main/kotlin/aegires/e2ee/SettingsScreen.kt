@@ -310,13 +310,17 @@ internal object SettingsScreen {
 
     private fun appearanceCard(a: Activity): View {
         val c = card(a, "Appearance")
-        c.addView(label(a, "Wallpaper for this screen. With Soft glass on, the cards show it blurred behind them.", MUTED, 14f, false), top(a, 4f))
+        val v = state.optJSONObject("values") ?: JSONObject()
+        c.addView(label(a, "Wallpaper for this screen and, if you switch it on below, for Discord itself. With Soft glass on, the cards show it blurred behind them.", MUTED, 14f, false), top(a, 4f))
         val row = LinearLayout(a)
         row.orientation = LinearLayout.HORIZONTAL
         val choose = button(a, "Choose wallpaper", ACCENT)
         choose.setOnClickListener {
             Wallpaper.pick(a) { ok ->
-                if (ok) show(a, state.toString()) else Toast.makeText(a, "No wallpaper chosen", Toast.LENGTH_SHORT).show()
+                if (ok) {
+                    AppWallpaper.refresh(a)
+                    show(a, state.toString())
+                } else Toast.makeText(a, "No wallpaper chosen", Toast.LENGTH_SHORT).show()
             }
         }
         row.addView(choose)
@@ -324,6 +328,7 @@ internal object SettingsScreen {
             val rm = button(a, "Remove", INPUT)
             rm.setOnClickListener {
                 Wallpaper.remove(a)
+                AppWallpaper.refresh(a)
                 show(a, state.toString())
             }
             val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -331,6 +336,26 @@ internal object SettingsScreen {
             row.addView(rm, lp)
         }
         c.addView(row, top(a, 8f))
+        toggle(a, c, v, "appWallpaper", "Show the wallpaper behind Discord")
+        toggle(a, c, v, "wallpaperBlur", "Blur it (text is easier to read)")
+        c.addView(label(a, "How strong it shows. Works best with a darker wallpaper.", MUTED, 14f, false), top(a, 10f))
+        val levels = LinearLayout(a)
+        levels.orientation = LinearLayout.HORIZONTAL
+        val names = arrayOf("Subtle", "Medium", "Strong")
+        val buttons = ArrayList<Button>()
+        for (i in 1..3) {
+            val b = button(a, names[i - 1], if (i == state.optInt("wallpaperStrength", 2)) ACCENT else INPUT)
+            buttons.add(b)
+            b.setOnClickListener {
+                state.put("wallpaperStrength", i)
+                for (j in 1..3) (buttons[j - 1].background as? GradientDrawable)?.setColor(if (j == i) ACCENT else INPUT)
+                events.add(JSONObject().put("t", "set").put("k", "wallpaperStrength").put("v", i).toString())
+            }
+            val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            if (i > 1) lp.leftMargin = dp(a, 8f)
+            levels.addView(b, lp)
+        }
+        c.addView(levels, top(a, 8f))
         return c
     }
 
@@ -510,6 +535,9 @@ internal object SettingsScreen {
             if (key == "softGlass") {
                 Glass.soft = checked && Glass.on
                 if (checked) Toast.makeText(a, "Soft glass is heavier: more GPU and battery use", Toast.LENGTH_LONG).show()
+            }
+            if (key == "appWallpaper" && checked && !Wallpaper.has(a)) {
+                Toast.makeText(a, "Choose a wallpaper first", Toast.LENGTH_LONG).show()
             }
             events.add(JSONObject().put("t", "set").put("k", key).put("v", checked).toString())
         }

@@ -160,6 +160,17 @@ export async function nativeGlass(mode: number): Promise<void> {
   await callNative("glass", [String(mode)], 3000);
 }
 
+/** Wallpaper behind Discord itself (the picture is chosen on the settings screen): on, blur, strength 1-3. */
+export async function nativeAppWallpaper(on: boolean, blur: boolean, strength: number): Promise<void> {
+  await callNative("appwallpaper", [on ? "1" : "0", blur ? "1" : "0", String(strength)], 3000);
+}
+
+/** Pushes the saved wallpaper settings to the native layer. */
+export function applyAppWallpaper(): void {
+  const strength = Math.min(3, Math.max(1, Number(storage.wallpaperStrength) || 2));
+  void nativeAppWallpaper(storage.appWallpaper === true, storage.wallpaperBlur === true, strength).catch(() => {});
+}
+
 /** Starts noting where the screen is touched (needed to find the picture a video plays on). */
 export async function nativeTouchSpy(): Promise<void> {
   await callNative("touchspy", [], 3000);
@@ -317,6 +328,7 @@ export async function startNative(): Promise<boolean> {
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
     void nativeGlass(storage.liquidGlass === true ? (storage.softGlass === true ? 2 : 1) : 0).catch(() => {});
+    applyAppWallpaper();
     void nativeTouchSpy().catch(() => {}); // the UI is up by now, so the window can be wrapped
     diag.argon2Engine = await readArgon2Engine();
     void checkV2();

@@ -4,6 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
+import android.graphics.Matrix
+import android.graphics.RuntimeShader
+import android.graphics.Shader
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Paint
@@ -97,6 +101,24 @@ internal object Wallpaper {
         return v
     }
 
+    /** The picture for the wallpaper behind Discord: the sharp one, or the blurred one (screen-shaped). Null when none is set. */
+    fun layerBitmap(a: Activity, blur: Boolean): Bitmap? = if (blur) blurred(a) else full(a)
+
+    /** The centred part of [src] that fills a [w] x [h] area without stretching (what CENTER_CROP shows). */
+    fun cropFor(src: Bitmap, w: Int, h: Int, out: Rect) {
+        if (w <= 0 || h <= 0) {
+            out.set(0, 0, src.width, src.height)
+            return
+        }
+        val aspect = w.toFloat() / h
+        var cw = src.width
+        var ch = src.height
+        if (src.width.toFloat() / src.height > aspect) cw = (src.height * aspect).toInt() else ch = (src.width / aspect).toInt()
+        val x = (src.width - cw) / 2
+        val y = (src.height - ch) / 2
+        out.set(x, y, x + cw, y + ch)
+    }
+
     /** A blurred, screen-shaped copy (a small bitmap, stretched when drawn). */
     private fun blurred(a: Activity): Bitmap? {
         val m = a.resources.displayMetrics
@@ -169,7 +191,11 @@ internal object Wallpaper {
     }
 }
 
-/** Draws the blurred wallpaper at the card's place on screen, clipped to the card, then the glass tint over it. */
+/**
+ * Draws the blurred wallpaper at the card's place on screen, clipped to the card, then the glass tint
+ * over it. On Android 13 and newer the card also bends what is behind it near its edges, like a thick
+ * glass lens (a small AGSL shader); anywhere else, or if that shader fails once, it is the flat version.
+ */
 private class FrostDrawable(private val v: View, private val blur: Bitmap, private val radius: Float) : Drawable() {
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -177,22 +203,63 @@ private class FrostDrawable(private val v: View, private val blur: Bitmap, priva
     private val dst = RectF()
     private val loc = IntArray(2)
     private val tint = Glass.drawable(radius)
+    private var lens: RuntimeShader? = null
+    private var source: BitmapShader? = null
+    private val matrix = Matrix()
+    private val depth = 18f * v.resources.displayMetrics.density
+
+    init {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try {
+                lens = RuntimeShader(LENS)
+                source = BitmapShader(blur, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            } catch (_: Throwable) {
+                lens = null
+            }
+        }
+    }
 
     override fun draw(c: Canvas) {
         val b = bounds
         rect.set(b)
-        path.reset()
-        path.addRoundRect(rect, radius, radius, Path.Direction.CW)
         val root = v.rootView
-        c.save()
-        c.clipPath(path)
         v.getLocationInWindow(loc)
-        c.translate(b.left - loc[0].toFloat(), b.top - loc[1].toFloat())
-        dst.set(0f, 0f, root.width.toFloat(), root.height.toFloat())
-        c.drawBitmap(blur, null, dst, paint)
-        c.restore()
+        if (!drawLens(c, b, root)) {
+            path.reset()
+            path.addRoundRect(rect, radius, radius, Path.Direction.CW)
+            c.save()
+            c.clipPath(path)
+            c.translate(b.left - loc[0].toFloat(), b.top - loc[1].toFloat())
+            dst.set(0f, 0f, root.width.toFloat(), root.height.toFloat())
+            c.drawBitmap(blur, null, dst, paint)
+            c.restore()
+        }
         tint.setBounds(b)
         tint.draw(c)
+    }
+
+    private fun drawLens(c: Canvas, b: Rect, root: View): Boolean {
+        val l = lens ?: return false
+        val s = source ?: return false
+        if (root.width <= 0 || root.height <= 0) return false
+        try {
+            // The blurred picture covers the whole window; shift it so the card sees the part behind itself.
+            matrix.setScale(root.width.toFloat() / blur.width, root.height.toFloat() / blur.height)
+            matrix.postTranslate(-loc[0].toFloat(), -loc[1].toFloat())
+            s.setLocalMatrix(matrix)
+            l.setInputShader("img", s)
+            l.setFloatUniform("size", b.width().toFloat(), b.height().toFloat())
+            l.setFloatUniform("origin", b.left.toFloat(), b.top.toFloat())
+            l.setFloatUniform("radius", radius)
+            l.setFloatUniform("depth", depth)
+            val p = Paint(Paint.ANTI_ALIAS_FLAG)
+            p.shader = l
+            c.drawRoundRect(rect, radius, radius, p)
+            return true
+        } catch (_: Throwable) {
+            lens = null // not available here (software canvas, old driver): use the flat version from now on
+            return false
+        }
     }
 
     override fun setAlpha(alpha: Int) {}
@@ -200,6 +267,33 @@ private class FrostDrawable(private val v: View, private val blur: Bitmap, priva
 
     @Suppress("OVERRIDE_DEPRECATION")
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+
+    private companion object {
+        // Inside the card the picture is shown as it is; within [depth] of the edge it is pulled in from
+        // further inside (a lens), split slightly by colour, with a faint bright band right at the rim.
+        const val LENS = """
+            uniform shader img;
+            uniform float2 size;
+            uniform float2 origin;
+            uniform float radius;
+            uniform float depth;
+            half4 main(float2 pos) {
+                float2 p = pos - origin;
+                float2 c = p - size * 0.5;
+                float2 q = abs(c) - (size * 0.5 - float2(radius));
+                float sd = length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+                float inside = clamp(-sd / depth, 0.0, 1.0);
+                float bend = (1.0 - inside) * (1.0 - inside);
+                float2 dir = c / max(length(c), 1.0);
+                float2 sp = pos - dir * bend * depth * 0.8;
+                half4 col = img.eval(sp);
+                half r = img.eval(sp + dir * bend * 2.0).r;
+                half bl = img.eval(sp - dir * bend * 2.0).b;
+                float lit = bend * (0.25 + 0.5 * clamp(0.5 - dir.y * 0.5, 0.0, 1.0));
+                return half4(half3(r, col.g, bl) + half3(lit * 0.3), 1.0);
+            }
+        """
+    }
 }
 
 /** Hosts the system picture chooser (a plugin has no onActivityResult of its own, so a fragment catches the answer). */

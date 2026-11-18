@@ -76,7 +76,7 @@ internal object PlayerUi {
         return t
     }
 
-    fun rounded(radius: Float, fill: Int): GradientDrawable {
+    fun rounded(radius: Float, fill: Int): android.graphics.drawable.Drawable {
         if (Glass.on) return Glass.drawable(radius, fill == BLURPLE)
         val bg = GradientDrawable()
         bg.cornerRadius = radius
