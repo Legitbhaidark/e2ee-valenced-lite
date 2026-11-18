@@ -53,6 +53,71 @@ internal object Wallpaper {
      */
     fun path(c: Context?): String = if (c == null) "" else file(c)?.absolutePath ?: ""
 
+    private fun hex(color: Int): String = "#" + Integer.toHexString(0x1000000 or (color and 0xFFFFFF)).substring(1)
+
+    /**
+     * Two colors of the current picture as JSON, for the "Wallpaper + colors" theme:
+     * {"dominant":"#rrggbb","accent":"#rrggbb"}, or "" without a picture. The dominant color is the
+     * average. The accent is the most colorful common hue (a dark photo with one bright light still
+     * gives a usable accent), made saturated and bright enough to be a button color on a dark app.
+     */
+    fun palette(c: Context?): String {
+        if (c == null) return ""
+        val f = file(c) ?: return ""
+        return try {
+            val opts = BitmapFactory.Options()
+            opts.inSampleSize = 8 // a few colors do not need the whole picture
+            val decoded = BitmapFactory.decodeFile(f.path, opts) ?: return ""
+            val small = Bitmap.createScaledBitmap(decoded, 48, 48, true)
+            val px = IntArray(48 * 48)
+            small.getPixels(px, 0, 48, 0, 0, 48, 48)
+            val hsv = FloatArray(3)
+            var sr = 0L
+            var sg = 0L
+            var sb = 0L
+            val wr = DoubleArray(12)
+            val wg = DoubleArray(12)
+            val wb = DoubleArray(12)
+            val wsum = DoubleArray(12)
+            for (p in px) {
+                val r = (p shr 16) and 0xFF
+                val g = (p shr 8) and 0xFF
+                val b = p and 0xFF
+                sr += r
+                sg += g
+                sb += b
+                android.graphics.Color.RGBToHSV(r, g, b, hsv)
+                if (hsv[1] >= 0.2f && hsv[2] >= 0.15f) {
+                    val bucket = ((hsv[0] / 30f).toInt()).coerceIn(0, 11)
+                    val w = (hsv[1] * hsv[2]).toDouble()
+                    wr[bucket] += r * w
+                    wg[bucket] += g * w
+                    wb[bucket] += b * w
+                    wsum[bucket] += w
+                }
+            }
+            val n = px.size
+            val dominant = android.graphics.Color.rgb((sr / n).toInt(), (sg / n).toInt(), (sb / n).toInt())
+            var best = 0
+            for (i in 1 until 12) if (wsum[i] > wsum[best]) best = i
+            val accent: Int
+            if (wsum[best] < 1.0) {
+                // A grey picture: a soft light accent in the picture's own hue.
+                android.graphics.Color.RGBToHSV(
+                    android.graphics.Color.red(dominant), android.graphics.Color.green(dominant), android.graphics.Color.blue(dominant), hsv,
+                )
+                accent = android.graphics.Color.HSVToColor(floatArrayOf(hsv[0], 0.2f, 0.85f))
+            } else {
+                val w = wsum[best]
+                android.graphics.Color.RGBToHSV((wr[best] / w).toInt(), (wg[best] / w).toInt(), (wb[best] / w).toInt(), hsv)
+                accent = android.graphics.Color.HSVToColor(floatArrayOf(hsv[0], hsv[1].coerceIn(0.45f, 0.9f), hsv[2].coerceIn(0.6f, 0.95f)))
+            }
+            "{\"dominant\":\"" + hex(dominant) + "\",\"accent\":\"" + hex(accent) + "\"}"
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
     fun remove(a: Activity) {
         try {
             all(a).forEach { it.delete() }

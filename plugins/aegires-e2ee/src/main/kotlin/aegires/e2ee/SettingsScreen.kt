@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -66,6 +67,7 @@ internal object SettingsScreen {
     private var chatPwField: EditText? = null
     private var chatSaveButton: Button? = null
     private var chatListBox: LinearLayout? = null
+    private var themeView: TextView? = null
 
     private class PresetButton(val index: Int, val label: String, val max: Int, val button: Button)
 
@@ -128,6 +130,7 @@ internal object SettingsScreen {
                 refreshKeyCard()
                 refreshFormatCard()
                 refreshChatCard()
+                refreshThemeView()
                 DevScreen.refresh()
             } catch (_: Throwable) {
             }
@@ -342,7 +345,41 @@ internal object SettingsScreen {
         if (themed) {
             // Valenced's Themes API is installed: the wallpaper is a real theme, drawn by Discord's own
             // theme pipeline (surfaces turn see-through), not a layer on top.
-            c.addView(label(a, "Valenced Themes found. Open Valenced's Themes settings and choose Aegires > Wallpaper. It then shows behind the whole app the way a Discord theme does.", MUTED, 14f, false), top(a, 10f))
+            c.addView(label(a, "Valenced Themes found. Choose a theme here (or in Valenced's Themes settings, group Aegires). A theme shows behind the whole app the way a Discord theme does, and the color themes re-color Discord. Restart Discord after choosing.", MUTED, 14f, false), top(a, 10f))
+            val status = label(a, themeText(), TEXT, 14f, false)
+            themeView = status
+            c.addView(status, top(a, 6f))
+            val list = state.optJSONArray("themeList")
+            if (list != null) {
+                val scroll = HorizontalScrollView(a)
+                scroll.isHorizontalScrollBarEnabled = false
+                val chips = LinearLayout(a)
+                chips.orientation = LinearLayout.HORIZONTAL
+                for (i in 0 until list.length()) {
+                    val o = list.getJSONObject(i)
+                    val id = o.getString("id")
+                    val b = button(a, o.getString("name"), if (state.optString("themeStatus", "") == id) ACCENT else INPUT)
+                    b.setOnClickListener {
+                        events.add(JSONObject().put("t", "theme").put("id", id).toString())
+                        state.put("themeNote", "Applying...")
+                        refreshThemeView()
+                    }
+                    val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    if (i > 0) lp.leftMargin = dp(a, 8f)
+                    chips.addView(b, lp)
+                }
+                val off = button(a, "Off", INPUT)
+                off.setOnClickListener {
+                    events.add(JSONObject().put("t", "theme").put("id", "off").toString())
+                    state.put("themeNote", "Applying...")
+                    refreshThemeView()
+                }
+                val offLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                offLp.leftMargin = dp(a, 8f)
+                chips.addView(off, offLp)
+                scroll.addView(chips)
+                c.addView(scroll, top(a, 8f))
+            }
         } else {
             c.addView(label(a, "Tip: install the Themes API plugin (valenced.api.themes) and Valenced's Themes settings to use the wallpaper as a real theme instead of a layer on top.", MUTED, 14f, false), top(a, 10f))
             toggle(a, c, v, "appWallpaper", "Show the wallpaper behind the messages in chats")
@@ -367,6 +404,32 @@ internal object SettingsScreen {
         }
         c.addView(levels, top(a, 8f))
         return c
+    }
+
+    /** "Selected: Midnight" and the last note, for the Appearance card. */
+    private fun themeText(): String {
+        val id = state.optString("themeStatus", "")
+        val list = state.optJSONArray("themeList")
+        var name = id
+        if (list != null) {
+            for (i in 0 until list.length()) {
+                val o = list.getJSONObject(i)
+                if (o.getString("id") == id) name = o.getString("name")
+            }
+        }
+        val now = when (id) {
+            "", "unknown" -> ""
+            "unavailable" -> ""
+            "none" -> "No theme is selected."
+            "other" -> "A theme from another plugin is selected. Choosing one here replaces it."
+            else -> "Selected: " + name
+        }
+        val note = state.optString("themeNote", "")
+        return if (note.isEmpty()) now else if (now.isEmpty()) note else now + "\n" + note
+    }
+
+    private fun refreshThemeView() {
+        themeView?.text = themeText()
     }
 
     private fun behaviourCard(a: Activity): View {

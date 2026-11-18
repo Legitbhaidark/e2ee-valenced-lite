@@ -13,7 +13,7 @@ import { getSelfId } from "./self.ts";
 import { maxPlaintextBytes } from "./crypto/v2.ts";
 import { FORCED_CHANNELS } from "./forced.ts";
 import { clearLinkPreviews } from "./patches/embeds.ts";
-import { themesAvailable } from "./wallpaperTheme.ts";
+import { activateTheme, themeList, themeStatus, themesAvailable } from "./wallpaperTheme.ts";
 import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "./about.ts";
 
 const POLL_MS = 300;
@@ -79,6 +79,7 @@ export function snapshot(): Record<string, unknown> {
     autoMb: Number(storage.autoDecryptMB ?? 25),
     wallpaperStrength: Number(storage.wallpaperStrength ?? 2),
     themesApi: themesAvailable(),
+    themeList: themeList(),
     isDev: DEV_BUILD,
     version: PLUGIN_VERSION,
     build: BUILD_ID,
@@ -103,6 +104,9 @@ export async function handleEvent(ev: any): Promise<void> {
         if (ev.k === "appWallpaper" || ev.k === "wallpaperBlur") applyAppWallpaper();
         if (ev.k === "liquidGlass" || ev.k === "softGlass") void nativeGlass(storage.liquidGlass === true ? (storage.softGlass === true ? 2 : 1) : 0).catch(() => {});
       }
+    } else if (ev?.t === "theme" && typeof ev.id === "string") {
+      const note = await activateTheme(ev.id);
+      await nativeSettingsUpdate(JSON.stringify({ themeNote: note, themeStatus: await themeStatus() }));
     } else if (ev?.t === "wallpaper") {
       applyAppWallpaper(); // a new or removed picture: the layer and the Valenced theme both follow it
     } else if (ev?.t === "setPreset") {
@@ -276,6 +280,8 @@ export async function openNativeSettings(onClose?: () => void): Promise<string> 
   closeCb = onClose ?? null;
   try {
     await nativeSettingsOpen(JSON.stringify(snapshot()));
+    // Which theme is selected needs an async read; the screen shows it as soon as it arrives.
+    void themeStatus().then((st) => nativeSettingsUpdate(JSON.stringify({ themeStatus: st }))).catch(() => {});
   } catch (e) {
     closeCb = null;
     return "Could not open the settings screen: " + String((e as any)?.message ?? e).split("\n")[0].slice(0, 100);

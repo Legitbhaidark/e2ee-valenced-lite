@@ -172,6 +172,19 @@ export async function nativeWallpaperPath(): Promise<string> {
   return typeof out === "string" ? out : "";
 }
 
+/** Two colors the native half reads from the wallpaper (average and accent), or null without a picture. */
+export async function nativeWallpaperPalette(): Promise<{ dominant: string; accent: string } | null> {
+  const out = await callNative("wallpaperpalette", [], 3000);
+  if (typeof out !== "string" || !out) return null;
+  try {
+    const p = JSON.parse(out);
+    const ok = (v: unknown) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
+    return ok(p?.dominant) && ok(p?.accent) ? { dominant: p.dominant, accent: p.accent } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Pushes the saved wallpaper settings to the native layer. The layer on top of the chat is only the
  * fallback: with the Valenced Themes API the wallpaper is a real theme (wallpaperTheme.ts) instead.
