@@ -4,6 +4,10 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev6
+- New setting "Soft glass" (heavier, with a warning): blurred wallpaper behind the settings cards and a stronger blur behind the screen on Android 12+. The blur is made once from your picture, not live.
+- New "Appearance" card in settings: choose (or remove) a wallpaper for the settings screen.
+
 ## 0.1.34-dev5
 - New setting "Liquid glass look" (off by default): frosted, see-through panels with a bright edge on the media players and the settings screen, with a real background blur on Android 12+ in settings.
 

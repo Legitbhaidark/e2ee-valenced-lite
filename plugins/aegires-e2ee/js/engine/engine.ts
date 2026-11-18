@@ -156,8 +156,8 @@ export async function nativeInlineStatus(): Promise<string> {
 }
 
 /** Turns the liquid glass look of the native players and screens on or off. */
-export async function nativeGlass(on: boolean): Promise<void> {
-  await callNative("glass", [on ? "1" : "0"], 3000);
+export async function nativeGlass(mode: number): Promise<void> {
+  await callNative("glass", [String(mode)], 3000);
 }
 
 /** Starts noting where the screen is touched (needed to find the picture a video plays on). */
@@ -316,7 +316,7 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
-    void nativeGlass(storage.liquidGlass === true).catch(() => {});
+    void nativeGlass(storage.liquidGlass === true ? (storage.softGlass === true ? 2 : 1) : 0).catch(() => {});
     void nativeTouchSpy().catch(() => {}); // the UI is up by now, so the window can be wrapped
     diag.argon2Engine = await readArgon2Engine();
     void checkV2();

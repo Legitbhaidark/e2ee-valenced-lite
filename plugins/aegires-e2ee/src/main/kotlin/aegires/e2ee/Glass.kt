@@ -12,6 +12,9 @@ import android.graphics.drawable.GradientDrawable
 internal object Glass {
     @Volatile var on = false
 
+    /** Soft glass: the heavier mode (blurred wallpaper behind the settings cards, stronger blur behind the screen). Only counts while [on]. */
+    @Volatile var soft = false
+
     private const val STROKE = 0x66FFFFFF
     private const val TOP = 0x40FFFFFF
     private const val BOTTOM = 0x66000000

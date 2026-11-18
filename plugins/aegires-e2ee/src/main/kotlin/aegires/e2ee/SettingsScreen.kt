@@ -14,6 +14,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -43,6 +44,7 @@ internal object SettingsScreen {
     internal const val TEXT = 0xFFDBDEE1.toInt()
     internal const val MUTED = 0xFF949BA4.toInt()
     internal const val ACCENT = 0xFF5865F2.toInt()
+    internal const val WARN = 0xFFF0B232.toInt()
     internal const val DANGER = 0xFFDA373C.toInt()
 
     internal val events = ConcurrentLinkedQueue<String>()
@@ -84,12 +86,13 @@ internal object SettingsScreen {
                 dialog?.dismiss()
                 events.clear()
                 Glass.on = state.optJSONObject("values")?.optBoolean("liquidGlass", false) == true
+                Glass.soft = Glass.on && state.optJSONObject("values")?.optBoolean("softGlass", false) == true
                 val d = Dialog(a, if (Glass.on) android.R.style.Theme_Translucent_NoTitleBar else android.R.style.Theme_Black_NoTitleBar_Fullscreen)
                 d.setContentView(build(a, d))
                 d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 if (Glass.on && android.os.Build.VERSION.SDK_INT >= 31) {
                     d.window?.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    d.window?.attributes?.blurBehindRadius = 60
+                    d.window?.attributes?.blurBehindRadius = if (Glass.soft) 120 else 60
                 }
                 d.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
                 d.setOnDismissListener {
@@ -168,14 +171,26 @@ internal object SettingsScreen {
         col.addView(formatCard(a))
         builtinCard(a)?.let { col.addView(it) }
         col.addView(behaviourCard(a))
+        col.addView(appearanceCard(a))
         col.addView(chatCard(a))
         if (state.optBoolean("isDev", false)) col.addView(toolsCard(a))
         col.addView(versionsCard(a))
         val scroll = ScrollView(a)
         scroll.addView(col)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        if (Glass.soft && Wallpaper.has(a)) {
+            // The blurred wallpaper in each card must stay put while the card scrolls: redraw the cards.
+            scroll.viewTreeObserver.addOnScrollChangedListener {
+                for (i in 0 until col.childCount) col.getChildAt(i).invalidate()
+            }
+        }
         keyboardAware(a, root)
-        return root
+        val wp = Wallpaper.imageView(a) ?: return root
+        root.setBackgroundColor(0x99101114.toInt()) // dims the wallpaper so the text stays readable
+        val wrap = FrameLayout(a)
+        wrap.addView(wp, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        wrap.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        return wrap
     }
 
     /**
@@ -293,12 +308,40 @@ internal object SettingsScreen {
         return c
     }
 
+    private fun appearanceCard(a: Activity): View {
+        val c = card(a, "Appearance")
+        c.addView(label(a, "Wallpaper for this screen. With Soft glass on, the cards show it blurred behind them.", MUTED, 14f, false), top(a, 4f))
+        val row = LinearLayout(a)
+        row.orientation = LinearLayout.HORIZONTAL
+        val choose = button(a, "Choose wallpaper", ACCENT)
+        choose.setOnClickListener {
+            Wallpaper.pick(a) { ok ->
+                if (ok) show(a, state.toString()) else Toast.makeText(a, "No wallpaper chosen", Toast.LENGTH_SHORT).show()
+            }
+        }
+        row.addView(choose)
+        if (Wallpaper.has(a)) {
+            val rm = button(a, "Remove", INPUT)
+            rm.setOnClickListener {
+                Wallpaper.remove(a)
+                show(a, state.toString())
+            }
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.leftMargin = dp(a, 8f)
+            row.addView(rm, lp)
+        }
+        c.addView(row, top(a, 8f))
+        return c
+    }
+
     private fun behaviourCard(a: Activity): View {
         val c = card(a, "Behaviour")
         val v = state.optJSONObject("values") ?: JSONObject()
         toggle(a, c, v, "encryptByDefault", "Encrypt outgoing messages by default (in chats without their own on/off setting)")
         toggle(a, c, v, "attachmentsExp", "Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats")
         toggle(a, c, v, "liquidGlass", "Liquid glass look for the media players and this screen (frosted, see-through panels; on Android 12+ this screen also blurs what is behind it). Applies to players you open next and to this screen the next time you open it")
+        toggle(a, c, v, "softGlass", "Soft glass (needs Liquid glass): blurred wallpaper behind the settings cards and a stronger blur behind the screen")
+        c.addView(label(a, "Heavier: soft glass uses more GPU and battery and may stutter on older phones.", WARN, 13f, false), top(a, 2f))
         toggle(a, c, v, "linkPreviews", "Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default")
 
         c.addView(label(a, "Encrypted files larger than this many MB show \"Tap to decrypt\" instead of downloading on their own (0 = always ask, default 25):", TEXT, 15f, false), top(a, 10f))
@@ -460,7 +503,14 @@ internal object SettingsScreen {
         sw.isChecked = values.optBoolean(key, false)
         sw.setOnCheckedChangeListener { _, checked ->
             values.put(key, checked)
-            if (key == "liquidGlass") Glass.on = checked
+            if (key == "liquidGlass") {
+                Glass.on = checked
+                if (!checked) Glass.soft = false
+            }
+            if (key == "softGlass") {
+                Glass.soft = checked && Glass.on
+                if (checked) Toast.makeText(a, "Soft glass is heavier: more GPU and battery use", Toast.LENGTH_LONG).show()
+            }
             events.add(JSONObject().put("t", "set").put("k", key).put("v", checked).toString())
         }
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -473,10 +523,10 @@ internal object SettingsScreen {
         val l = LinearLayout(a)
         l.orientation = LinearLayout.VERTICAL
         if (Glass.on) {
-            l.background = Glass.drawable(dp(a, 14f).toFloat())
+            l.background = (if (Glass.soft) Wallpaper.frost(a, l, dp(a, 14f).toFloat()) else null) ?: Glass.drawable(dp(a, 14f).toFloat())
         } else {
             val bg = GradientDrawable()
-            bg.setColor(CARD)
+            bg.setColor(if (Wallpaper.has(a)) 0xD92B2D31.toInt() else CARD)
             bg.cornerRadius = dp(a, 8f).toFloat()
             l.background = bg
         }

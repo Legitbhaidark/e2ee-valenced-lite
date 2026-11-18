@@ -18,7 +18,7 @@ import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "./about.ts";
 const POLL_MS = 300;
 
 /** The on/off settings the screen may change. "debug" exists in dev builds only. */
-export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "liquidGlass", "padme", ...(DEV_BUILD ? ["debug"] : [])];
+export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "liquidGlass", "softGlass", "padme", ...(DEV_BUILD ? ["debug"] : [])];
 const DEFAULT_ON = new Set(["inlineVideo", "encButton", "padme"]); // a missing value means on
 
 const toggleValue = (k: string): boolean => (DEFAULT_ON.has(k) ? storage[k] !== false : !!storage[k]);
@@ -94,7 +94,7 @@ export async function handleEvent(ev: any): Promise<void> {
       } else if (TOGGLES.includes(ev.k)) {
         storage[ev.k] = ev.v === true;
         if (ev.k === "linkPreviews" && ev.v !== true) clearLinkPreviews();
-        if (ev.k === "liquidGlass") void nativeGlass(ev.v === true).catch(() => {});
+        if (ev.k === "liquidGlass" || ev.k === "softGlass") void nativeGlass(storage.liquidGlass === true ? (storage.softGlass === true ? 2 : 1) : 0).catch(() => {});
       }
     } else if (ev?.t === "setPreset") {
       const i = Number(ev.i);
