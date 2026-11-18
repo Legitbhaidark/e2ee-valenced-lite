@@ -4,6 +4,9 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev1
+- Fixed: the in-chat video and audio players were drawn over Discord's message box when you scrolled. They now slide away under the box (and stay under it for touches) exactly like Discord's own attachments.
+
 ## 0.1.33 - stable
 - The header button shows "🔒 E2EE" when encryption is on and "🔒 OFF" when it is off.
 - The button stays glued to the header icons (also while screens slide), sits left of the call and video icons in a DM, and is hidden in the DM list and in chats without a key.

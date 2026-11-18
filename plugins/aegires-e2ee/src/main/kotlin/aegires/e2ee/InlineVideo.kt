@@ -240,7 +240,7 @@ internal object InlineVideo {
         hiddenSince = 0L
         dragging = false
 
-        val root = FrameLayout(a)
+        val root = ClipFrame(a)
         root.setBackgroundColor(Color.BLACK)
         root.isClickable = true
 
@@ -406,7 +406,8 @@ internal object InlineVideo {
             return false
         }
         val vis = Rect()
-        val seen = pic.isShown && pic.getGlobalVisibleRect(vis) && vis.height() * 10 >= full.height() * 3
+        // Visible = on screen and not behind the message box; it slides away gradually, like Discord's own attachments.
+        val seen = ChatViewport.visible(root.context as Activity, pic, vis)
         if (!seen) {
             // Scrolled away (or covered by another screen): pause and hide; give up after a while.
             root.visibility = View.INVISIBLE

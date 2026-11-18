@@ -105,7 +105,7 @@ internal object InlineAudio {
         dragging = false
 
         // The card: dark, rounded like Discord's cards, and it swallows taps so they do not reach the chat.
-        val root = FrameLayout(a)
+        val root = ClipFrame(a)
         val bg = GradientDrawable()
         bg.setColor(0xFF1E1F22.toInt())
         bg.cornerRadius = d(18f).toFloat()
@@ -239,7 +239,7 @@ internal object InlineAudio {
             return false
         }
         val vis = Rect()
-        val seen = pic.isShown && pic.getGlobalVisibleRect(vis) && vis.height() * 10 >= full.height() * 3
+        val seen = ChatViewport.visible(root.context as Activity, pic, vis) // on screen and not behind the message box
         if (!seen) {
             root.visibility = View.INVISIBLE
             try {
