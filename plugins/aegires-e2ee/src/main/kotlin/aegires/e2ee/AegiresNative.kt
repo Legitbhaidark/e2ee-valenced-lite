@@ -253,6 +253,9 @@ val aegiresNative = plugin {
             "ok"
         }
 
+        // Absolute path of the current wallpaper picture, "" when there is none (for the Valenced theme).
+        registerNativeMethod("aegires.wallpaperpath") { _ -> Wallpaper.path(appContext) }
+
         // What the in-chat player did for the last tap, for Diagnostics.
         registerNativeMethod("aegires.inlinestatus") { _ -> InlineVideo.status() }
 

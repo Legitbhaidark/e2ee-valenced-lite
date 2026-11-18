@@ -4,6 +4,10 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev11
+- The wallpaper is now a real Valenced theme when the Themes API plugin (`valenced.api.themes`, optional) is installed: choose Aegires > Wallpaper in Valenced's Themes settings and the picture becomes the background of the whole app, drawn through Discord's own theme pipeline (surfaces turn see-through) instead of a layer on top of the chat. Subtle / Medium / Strong set how much shows through, "Blur it" blurs the picture. Without the Themes API the chat-only layer from dev9 is still used.
+- Each picked wallpaper gets a new file name, so the picture always refreshes.
+
 ## 0.1.34-dev10
 - Liquid glass for the video and audio seek bar: a clear glass track, a blurple glass played part and a round glass knob. The time counter now sits in a glass pill.
 

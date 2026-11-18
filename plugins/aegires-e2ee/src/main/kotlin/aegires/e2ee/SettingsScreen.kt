@@ -311,7 +311,8 @@ internal object SettingsScreen {
     private fun appearanceCard(a: Activity): View {
         val c = card(a, "Appearance")
         val v = state.optJSONObject("values") ?: JSONObject()
-        c.addView(label(a, "Wallpaper for this screen and, if you switch it on below, for the messages in your chats. With Soft glass on, the cards show it blurred behind them.", MUTED, 14f, false), top(a, 4f))
+        val themed = state.optBoolean("themesApi", false)
+        c.addView(label(a, "Wallpaper for this screen and for the messages in your chats. With Soft glass on, the cards here show it blurred behind them.", MUTED, 14f, false), top(a, 4f))
         val row = LinearLayout(a)
         row.orientation = LinearLayout.HORIZONTAL
         val choose = button(a, "Choose wallpaper", ACCENT)
@@ -319,6 +320,7 @@ internal object SettingsScreen {
             Wallpaper.pick(a) { ok ->
                 if (ok) {
                     AppWallpaper.refresh(a)
+                    events.add(JSONObject().put("t", "wallpaper").toString()) // the Valenced theme must point at the new file
                     show(a, state.toString())
                 } else Toast.makeText(a, "No wallpaper chosen", Toast.LENGTH_SHORT).show()
             }
@@ -329,6 +331,7 @@ internal object SettingsScreen {
             rm.setOnClickListener {
                 Wallpaper.remove(a)
                 AppWallpaper.refresh(a)
+                events.add(JSONObject().put("t", "wallpaper").toString())
                 show(a, state.toString())
             }
             val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -336,9 +339,16 @@ internal object SettingsScreen {
             row.addView(rm, lp)
         }
         c.addView(row, top(a, 8f))
-        toggle(a, c, v, "appWallpaper", "Show the wallpaper behind the messages in chats")
+        if (themed) {
+            // Valenced's Themes API is installed: the wallpaper is a real theme, drawn by Discord's own
+            // theme pipeline (surfaces turn see-through), not a layer on top.
+            c.addView(label(a, "Valenced Themes found. Open Valenced's Themes settings and choose Aegires > Wallpaper. It then shows behind the whole app the way a Discord theme does.", MUTED, 14f, false), top(a, 10f))
+        } else {
+            c.addView(label(a, "Tip: install the Themes API plugin (valenced.api.themes) and Valenced's Themes settings to use the wallpaper as a real theme instead of a layer on top.", MUTED, 14f, false), top(a, 10f))
+            toggle(a, c, v, "appWallpaper", "Show the wallpaper behind the messages in chats")
+        }
         toggle(a, c, v, "wallpaperBlur", "Blur it (text is easier to read)")
-        c.addView(label(a, "How strong it shows. Works best with a darker wallpaper.", MUTED, 14f, false), top(a, 10f))
+        c.addView(label(a, if (themed) "How much of the picture shows through Discord's surfaces." else "How strong it shows. Works best with a darker wallpaper.", MUTED, 14f, false), top(a, 10f))
         val levels = LinearLayout(a)
         levels.orientation = LinearLayout.HORIZONTAL
         val names = arrayOf("Subtle", "Medium", "Strong")

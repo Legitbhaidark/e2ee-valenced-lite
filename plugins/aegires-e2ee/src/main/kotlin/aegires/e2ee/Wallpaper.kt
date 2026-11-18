@@ -1,6 +1,7 @@
 package aegires.e2ee
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -36,13 +37,25 @@ internal object Wallpaper {
     private var blurred: Bitmap? = null
     private var blurKey = ""
 
-    private fun file(a: Activity) = File(a.filesDir, "aegires-wallpaper.jpg")
+    /** Every wallpaper file in the app's files folder: "aegires-wp-<time>.jpg" (and the older fixed name). */
+    private fun all(c: Context): List<File> =
+        c.filesDir.listFiles { f -> f.isFile && (f.name.startsWith("aegires-wp-") || f.name == "aegires-wallpaper.jpg") }?.toList() ?: emptyList()
 
-    fun has(a: Activity): Boolean = file(a).isFile
+    /** The current wallpaper file: the newest one. */
+    private fun file(c: Context): File? = all(c).maxByOrNull { it.lastModified() }
+
+    fun has(c: Context): Boolean = file(c) != null
+
+    /**
+     * Absolute path of the current wallpaper, or "" when there is none. Each picture gets a new file name,
+     * so an image cache that remembers the old path never shows the old picture. The Valenced theme
+     * (WallpaperTheme.ts) points its background at this path.
+     */
+    fun path(c: Context?): String = if (c == null) "" else file(c)?.absolutePath ?: ""
 
     fun remove(a: Activity) {
         try {
-            file(a).delete()
+            all(a).forEach { it.delete() }
         } catch (_: Throwable) {
         }
         clearCaches()
@@ -77,7 +90,9 @@ internal object Wallpaper {
             val opts = BitmapFactory.Options()
             opts.inSampleSize = sample
             val bmp = a.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return false
-            FileOutputStream(file(a)).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            val old = all(a)
+            FileOutputStream(File(a.filesDir, "aegires-wp-" + System.currentTimeMillis() + ".jpg")).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            old.forEach { it.delete() }
             clearCaches()
             return true
         } catch (_: Throwable) {
@@ -87,7 +102,7 @@ internal object Wallpaper {
 
     private fun full(a: Activity): Bitmap? {
         full?.let { return it }
-        val b = try { BitmapFactory.decodeFile(file(a).path) } catch (_: Throwable) { null }
+        val b = try { file(a)?.let { BitmapFactory.decodeFile(it.path) } } catch (_: Throwable) { null }
         full = b
         return b
     }

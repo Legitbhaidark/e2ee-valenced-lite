@@ -6,6 +6,7 @@
 // errors, deriving a key fails with a clear message (stored keys keep working). The WebView engine
 // of the Kettu version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
 import { storage } from "../storage.ts";
+import { syncWallpaperTheme, themesAvailable } from "../wallpaperTheme.ts";
 import { unscoped } from "../host.ts";
 import { getArgonEngine, setArgon2Offload } from "../crypto/kdf2.ts";
 import { base64Decode, base64Encode } from "../crypto/base64.ts";
@@ -165,10 +166,21 @@ export async function nativeAppWallpaper(on: boolean, blur: boolean, strength: n
   await callNative("appwallpaper", [on ? "1" : "0", blur ? "1" : "0", String(strength)], 3000);
 }
 
-/** Pushes the saved wallpaper settings to the native layer. */
+/** Absolute path of the wallpaper picture, "" when none is set. */
+export async function nativeWallpaperPath(): Promise<string> {
+  const out = await callNative("wallpaperpath", [], 3000);
+  return typeof out === "string" ? out : "";
+}
+
+/**
+ * Pushes the saved wallpaper settings to the native layer. The layer on top of the chat is only the
+ * fallback: with the Valenced Themes API the wallpaper is a real theme (wallpaperTheme.ts) instead.
+ */
 export function applyAppWallpaper(): void {
   const strength = Math.min(3, Math.max(1, Number(storage.wallpaperStrength) || 2));
-  void nativeAppWallpaper(storage.appWallpaper === true, storage.wallpaperBlur === true, strength).catch(() => {});
+  const layer = storage.appWallpaper === true && !themesAvailable();
+  void nativeAppWallpaper(layer, storage.wallpaperBlur === true, strength).catch(() => {});
+  void syncWallpaperTheme();
 }
 
 /** Starts noting where the screen is touched (needed to find the picture a video plays on). */

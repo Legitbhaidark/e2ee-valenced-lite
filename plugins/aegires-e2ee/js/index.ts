@@ -18,6 +18,7 @@ import { installVideoPlayer } from "./patches/player.ts";
 import { installHeaderLock } from "./patches/header.ts";
 import { installEncButton } from "./patches/encButton.ts";
 import { announceUpdate } from "./announce.ts";
+import { bindThemes, unbindThemes } from "./wallpaperTheme.ts";
 
 let undo: Array<() => void> = [];
 let timers: any[] = [];
@@ -56,6 +57,7 @@ export default plugin({
 
   start(api: any) {
     bindHost(api);
+    bindThemes(api); // the Themes API is an optional dependency: the wallpaper becomes a real theme when it is there
     diag.installed["env"] = envSummary();
     diag.installed["storage"] = storageNote() || "ok";
     if (!hasSecureRandom()) quiet("no secure random source - encrypting is impossible. Run the self-test in settings.");
@@ -66,7 +68,7 @@ export default plugin({
     safely("encryption button", installEncButton);
     // Argon2id comes from the native half; checked here.
     void startNative().then((ok) => (ok ? announceUpdate() : false)).catch(() => {});
-    api.cleanup(unloadAll, stopNative, async () => {
+    api.cleanup(unloadAll, stopNative, unbindThemes, async () => {
       await detachStorage();
       unbindHost();
     });
