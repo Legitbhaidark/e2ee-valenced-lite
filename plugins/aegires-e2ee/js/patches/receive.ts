@@ -91,8 +91,10 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       diag.noKey++;
     } else if (r === "noauthor") {
       diag.noAuthor++;
+      remember(m.id); // encrypted, key present, but not readable: still gets the lock beside the name
     } else {
       diag.wrongKey++;
+      remember(m.id);
     }
   }
   if (m.id != null) {

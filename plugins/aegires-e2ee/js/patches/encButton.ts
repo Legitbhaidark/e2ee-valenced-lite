@@ -6,7 +6,7 @@
 //   on      encryption is on here (green)
 //   off     encryption is off here (grey outline)
 //   locked  a chat with a built-in key: always on, a press only explains that
-//   hide    no chat open, the native half is missing, or "E2EE button" is switched off in settings
+//   hide    no chat open, no key for this chat, the native half is missing, or "E2EE button" is switched off in settings
 // A press turns encryption on/off for THIS chat only, the same switch as "/e2ee on|off".
 import { nativeEncButton, nativeEncButtonStatus, nativeEncButtonTaps, nativeReady } from "../engine/engine.ts";
 import { selectedChannelId } from "../patch.ts";
@@ -23,6 +23,7 @@ type BtnState = "on" | "off" | "locked" | "hide";
 export function wantedState(channelId: string): BtnState {
   if (storage.encButton === false || !channelId) return "hide";
   if (isForced(channelId)) return "locked";
+  if (!canSend(channelId)) return "hide"; // no key for this chat: nothing to switch
   return isEncryptionOn(channelId) ? "on" : "off";
 }
 

@@ -4,6 +4,11 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.33-dev2
+- The header button is glued to its place: it follows the header icons frame by frame (also while a screen slides) and disappears in the same frame the header is gone.
+- The button is not shown when the chat has no key set.
+- Messages that are encrypted but cannot be decrypted (wrong key) now get the lock beside the name too.
+
 ## 0.1.33-dev1
 - The header button now reads "🔒 E2EE" when encryption is on and "🔒 OFF" when it is off.
 - Fixed: the button no longer shows in the DM list, only inside a chat.

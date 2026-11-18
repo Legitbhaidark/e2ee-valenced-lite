@@ -5,6 +5,7 @@ import android.app.Application
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.SystemClock
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -48,6 +49,8 @@ internal object EncryptButton {
     private var searchIcon: WeakReference<View>? = null // the leftmost header icon the button sits next to
     private var composer: WeakReference<View>? = null // the message box of the open chat
     private var composerScanAt = 0L
+    private var preDraw: ViewTreeObserver.OnPreDrawListener? = null
+    private var lastFull = 0L // last time place() ran the full checks
     private var state = "hide"
     private var placing = false
     private var why = "not started" // why the button is shown or hidden right now (Diagnostics)
@@ -146,11 +149,8 @@ internal object EncryptButton {
             val decorNow = activity.window.decorView as? ViewGroup
             val vto = decorNow?.viewTreeObserver
             if (vto != null && (vto !== observer || !vto.isAlive)) {
-                listener?.let { l -> try { observer?.takeIf { it.isAlive }?.removeOnGlobalLayoutListener(l) } catch (_: Throwable) {} }
-                val l = ViewTreeObserver.OnGlobalLayoutListener { place() }
-                vto.addOnGlobalLayoutListener(l)
-                listener = l
-                observer = vto
+                unobserve()
+                observe(vto)
             }
             return
         }
@@ -174,10 +174,7 @@ internal object EncryptButton {
         decor.addView(tv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
         view = tv
         host = WeakReference(activity)
-        val l = ViewTreeObserver.OnGlobalLayoutListener { place() }
-        decor.viewTreeObserver.addOnGlobalLayoutListener(l)
-        listener = l
-        observer = decor.viewTreeObserver
+        observe(decor.viewTreeObserver)
         // Safety net: even if no layout callback arrives, the position is checked once a second.
         tv.postDelayed(object : Runnable {
             override fun run() {
@@ -188,23 +185,56 @@ internal object EncryptButton {
         }, 1000)
     }
 
+    /** Layout passes run the full checks; every drawn frame only moves or hides the button (see [follow]). */
+    private fun observe(vto: ViewTreeObserver) {
+        val l = ViewTreeObserver.OnGlobalLayoutListener { place() }
+        val p = ViewTreeObserver.OnPreDrawListener {
+            follow()
+            true
+        }
+        vto.addOnGlobalLayoutListener(l)
+        vto.addOnPreDrawListener(p)
+        listener = l
+        preDraw = p
+        observer = vto
+    }
+
+    private fun unobserve() {
+        try {
+            val vto = observer
+            if (vto != null && vto.isAlive) {
+                listener?.let { vto.removeOnGlobalLayoutListener(it) }
+                preDraw?.let { vto.removeOnPreDrawListener(it) }
+            }
+        } catch (_: Throwable) {
+        }
+        listener = null
+        preDraw = null
+        observer = null
+    }
+
     private fun detach() {
         val tv = view
         val a = host?.get()
-        val l = listener
         try {
-            if (a != null && l != null) {
-                val vto = observer ?: (a.window.decorView as? ViewGroup)?.viewTreeObserver
-                if (vto != null && vto.isAlive) vto.removeOnGlobalLayoutListener(l)
+            if (a != null && observer == null) {
+                val vto = (a.window.decorView as? ViewGroup)?.viewTreeObserver
+                if (vto != null && vto.isAlive) {
+                    listener?.let { vto.removeOnGlobalLayoutListener(it) }
+                    preDraw?.let { vto.removeOnPreDrawListener(it) }
+                }
             }
+            unobserve()
             (tv?.parent as? ViewGroup)?.removeView(tv)
         } catch (_: Throwable) {
         }
         view = null
         host = null
         listener = null
+        preDraw = null
         observer = null
         searchIcon = null
+        composer = null
     }
 
     private fun style() {
@@ -231,9 +261,41 @@ internal object EncryptButton {
 
     // ------------------------------------------------------------------ placement
 
+    /**
+     * Runs before every frame is drawn. The button is glued to its anchor icon: it moves with it (a screen
+     * sliding in or out) and disappears in the same frame the icon is gone. The heavier checks of [place]
+     * run a few times a second.
+     */
+    private fun follow() {
+        val tv = view ?: return
+        val a = host?.get() ?: return
+        if (state == "hide" || placing) return
+        val decor = a.window.decorView as? ViewGroup ?: return
+        val icon = searchIcon?.get()
+        val ok = icon != null && isHeaderIcon(icon, Rect(0, 0, a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels), dp(a, MAX_ICON_DP.toFloat()), ICON_WORDS)
+        if (!ok) {
+            if (tv.visibility == View.VISIBLE) tv.visibility = View.INVISIBLE
+        } else if (tv.visibility == View.VISIBLE) {
+            position(tv, icon!!, decor, a)
+        }
+        if (SystemClock.uptimeMillis() - lastFull >= 150) place()
+    }
+
+    private fun position(tv: View, icon: View, decor: ViewGroup, a: Activity) {
+        val iconLoc = IntArray(2)
+        val decorLoc = IntArray(2)
+        icon.getLocationOnScreen(iconLoc)
+        decor.getLocationOnScreen(decorLoc)
+        val x = iconLoc[0] - decorLoc[0] - dp(a, 4f) - tv.measuredWidth
+        val y = iconLoc[1] - decorLoc[1] + (icon.height - tv.measuredHeight) / 2
+        if (tv.translationX != x.toFloat()) tv.translationX = x.toFloat()
+        if (tv.translationY != y.toFloat()) tv.translationY = y.toFloat()
+    }
+
     private fun place() {
         if (placing) return
         placing = true
+        lastFull = SystemClock.uptimeMillis()
         try {
             val tv = view ?: return
             val a = host?.get() ?: return
@@ -263,16 +325,8 @@ internal object EncryptButton {
             }
             why = "shown"
             tv.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-            val iconLoc = IntArray(2)
-            val decorLoc = IntArray(2)
-            icon.getLocationOnScreen(iconLoc)
-            decor.getLocationOnScreen(decorLoc)
-            val gap = dp(a, 4f)
-            val x = iconLoc[0] - decorLoc[0] - gap - tv.measuredWidth
-            val y = iconLoc[1] - decorLoc[1] + (icon.height - tv.measuredHeight) / 2
-            tv.translationX = x.toFloat()
-            tv.translationY = y.toFloat()
-            tv.visibility = View.VISIBLE
+            position(tv, icon, decor, a)
+            if (tv.visibility != View.VISIBLE) tv.visibility = View.VISIBLE
             // Only when something was added after us: bringToFront() requests a layout, which would call place() again, forever.
             if (decor.getChildAt(decor.childCount - 1) !== tv) tv.bringToFront()
         } finally {
@@ -389,7 +443,7 @@ internal object EncryptButton {
         }
         if (ok(composer?.get())) return true
         val now = System.currentTimeMillis()
-        if (now - composerScanAt < 400) return false // a miss is not re-scanned on every layout pass
+        if (now - composerScanAt < 150) return false // a miss is not re-scanned on every layout pass
         composerScanAt = now
         val found = arrayOfNulls<View>(1)
         fun scan(v: View) {

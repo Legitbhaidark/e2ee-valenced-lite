@@ -57,6 +57,7 @@ assert.equal(await startNative(), true);
 const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // states
+assert.equal(wantedState(CH), "hide", "no key for this chat: no button");
 storage.keyV2 = "ab".repeat(32);
 assert.equal(storage.encButton, true, "on by default");
 assert.equal(wantedState(""), "hide");
