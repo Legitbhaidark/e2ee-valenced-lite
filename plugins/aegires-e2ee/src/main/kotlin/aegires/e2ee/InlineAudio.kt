@@ -117,7 +117,8 @@ internal object InlineAudio {
         row.setPadding(d(12f), d(6f), d(8f), d(6f))
         root.addView(row, FrameLayout.LayoutParams(match, match))
 
-        val circle = PlayerUi.circle(a, "\u23F8", 48f, 20f, PlayerUi.BLURPLE)
+        val circle = PlayPauseView(a)
+        circle.setPlaying(true)
         row.addView(circle, LinearLayout.LayoutParams(d(48f), d(48f)))
 
         val col = LinearLayout(a)
@@ -218,7 +219,6 @@ internal object InlineAudio {
         follow(root, pic, mp)
         var lastTick = 0L
         var lastText = ""
-        var lastSymbol = ""
         root.postOnAnimation(object : Runnable {
             override fun run() {
                 if (box !== root || player !== mp) return
@@ -234,11 +234,7 @@ internal object InlineAudio {
                         time.text = text
                         lastText = text
                     }
-                    val symbol = if (transport.playing) "\u23F8" else "\u25B6"
-                    if (symbol != lastSymbol) {
-                        circle.text = symbol
-                        lastSymbol = symbol
-                    }
+                    circle.setPlaying(transport.playing)
                 }
                 root.postOnAnimation(this)
             }

@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.RectF
 import android.media.MediaPlayer
-import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -23,9 +22,9 @@ import java.lang.ref.WeakReference
  * tree; the deepest view there that is picture-sized is the target. If that fails (no recent touch, no
  * suitable view, a playback error) the full-screen [VideoPlayer] is used, so a tap always plays.
  *
- * The player: one tap shows or hides the controls ([PlayerControls]: back / forward 10 s, play and
- * pause, seek bar, speed 1x to 5x, full screen, picture-in-picture, close); three quick taps go to full
- * screen. It stops by itself when its picture is scrolled away, replaced by another message (the
+ * The player: one tap shows or hides the controls ([PlayerControls]: play and
+ * pause, seek bar, speed 0.25x to 5x, full screen, picture-in-picture, close); a double tap on the
+ * left / right half jumps 10 s back / forward. It stops by itself when its picture is scrolled away, replaced by another message (the
  * chat re-uses views), or when the video ends.
  */
 internal object InlineVideo {
@@ -42,9 +41,6 @@ internal object InlineVideo {
     private var targetW = 0
     private var targetH = 0
     private var hiddenSince = 0L
-    private var taps = 0
-    private var lastTapAt = 0L
-    private var pendingToggle: Runnable? = null
 
     /** What happened on the last start: "inline", or why it fell back to the full-screen player. */
     @Volatile private var status = "no tap yet"
@@ -85,8 +81,6 @@ internal object InlineVideo {
     fun close() {
         val b = box
         val v = video
-        pendingToggle?.let { b?.removeCallbacks(it) }
-        pendingToggle = null
         box = null
         video = null
         target = null
@@ -275,36 +269,19 @@ internal object InlineVideo {
             a, transport, false,
             onClose = { close() },
             onFullscreen = fullScreen,
-            onPip = {
+            onPip = { whole ->
                 val pos = vv.currentPosition
                 val sp = controls?.speed ?: 1f
-                if (PipPlayer.enter(a, filePath, pos, sp, targetW, targetH)) close()
+                val ok = if (whole) PipPlayer.enterApp(a, targetW, targetH)
+                else PipPlayer.enter(a, filePath, pos, sp, targetW, targetH)
+                if (ok) close()
                 else android.widget.Toast.makeText(a, "Picture-in-picture is not available here", android.widget.Toast.LENGTH_SHORT).show()
             },
         )
         controls = ctl
         root.addView(ctl.layer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
-        // One tap on the video shows or hides the controls; three quick taps go to full screen. The
-        // first tap (the one that started the player) counts as the first of three.
-        taps = 1
-        lastTapAt = SystemClock.uptimeMillis()
-        root.setOnClickListener {
-            val now = SystemClock.uptimeMillis()
-            taps = if (now - lastTapAt <= 600L) taps + 1 else 1
-            lastTapAt = now
-            pendingToggle?.let { root.removeCallbacks(it) }
-            pendingToggle = null
-            if (taps >= 3) {
-                taps = 0
-                fullScreen()
-            } else {
-                // Only once it is clear no third tap follows.
-                val toggle = Runnable { ctl.toggle() }
-                pendingToggle = toggle
-                root.postDelayed(toggle, 350L)
-            }
-        }
+        ctl.attachTo(root)
 
         decor.addView(root, FrameLayout.LayoutParams(targetW, targetH, Gravity.TOP or Gravity.START))
         box = root

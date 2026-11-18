@@ -83,12 +83,14 @@ internal object VideoPlayer {
                 }
 
                 // Same controls as the in-chat player; picture-in-picture is for video only.
-                val pip: (() -> Unit)? = if (isAudio(path) || !PipPlayer.supported(activity)) null else {
-                    {
+                val pip: ((Boolean) -> Unit)? = if (isAudio(path) || !PipPlayer.supported(activity)) null else {
+                    { whole ->
                         val pos = video.currentPosition
                         val sp = controls?.speed ?: 1f
                         val m = mpRef
-                        val entered = PipPlayer.enter(activity, path, pos, sp, m?.videoWidth ?: 0, m?.videoHeight ?: 0)
+                        val w = m?.videoWidth ?: 0
+                        val h = m?.videoHeight ?: 0
+                        val entered = if (whole) PipPlayer.enterApp(activity, w, h) else PipPlayer.enter(activity, path, pos, sp, w, h)
                         if (entered) dialog.dismiss()
                         else Toast.makeText(activity, "Picture-in-picture is not available here", Toast.LENGTH_SHORT).show()
                     }
@@ -96,7 +98,7 @@ internal object VideoPlayer {
                 val ctl = PlayerControls(activity, transport, true, onClose = { dialog.dismiss() }, onFullscreen = null, onPip = pip)
                 controls = ctl
                 root.addView(ctl.layer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-                root.setOnClickListener { ctl.toggle() }
+                ctl.attachTo(root)
                 ctl.poke()
                 root.postOnAnimation(object : Runnable {
                     override fun run() {

@@ -78,6 +78,21 @@ internal object PipPlayer {
         }
     }
 
+    /** Whole-app picture-in-picture: the app window itself shrinks, nothing is put over it. */
+    fun enterApp(a: Activity, vw: Int, vh: Int): Boolean {
+        if (!supported(a)) return false
+        return try {
+            val b = PictureInPictureParams.Builder()
+            if (vw > 0 && vh > 0) {
+                val r = (vw.toFloat() / vh).coerceIn(0.43f, 2.38f)
+                b.setAspectRatio(Rational((r * 1000).toInt(), 1000))
+            }
+            a.enterPictureInPictureMode(b.build())
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     fun close() {
         val l = layer
         val v = video
