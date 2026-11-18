@@ -3,10 +3,10 @@ package aegires.e2ee
 import android.app.Activity
 import android.app.Dialog
 import android.graphics.Color
+import android.media.MediaPlayer
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.MediaController
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
@@ -40,14 +40,25 @@ internal object VideoPlayer {
                 root.setBackgroundColor(Color.BLACK)
 
                 val video = VideoView(activity)
-                val controls = MediaController(activity)
-                controls.setAnchorView(video)
-                video.setMediaController(controls)
+                var mpRef: MediaPlayer? = null
+                var controls: PlayerControls? = null
+                val transport = object : Transport {
+                    override val playing: Boolean get() = try { video.isPlaying } catch (_: Throwable) { false }
+                    override val position: Int get() = try { video.currentPosition } catch (_: Throwable) { 0 }
+                    override val duration: Int get() = try { video.duration } catch (_: Throwable) { 0 }
+                    override fun play() = video.start()
+                    override fun pause() = video.pause()
+                    override fun seekTo(ms: Int) = video.seekTo(ms)
+                    override fun setSpeed(speed: Float): Boolean = PlayerUi.applySpeed(mpRef, speed, playing)
+                }
                 video.setVideoPath(path)
-                video.setOnPreparedListener {
+                video.setOnPreparedListener { mp ->
+                    mpRef = mp
                     if (startMs > 0) video.seekTo(startMs)
                     video.start()
+                    controls?.applyCurrentSpeed()
                 }
+                video.setOnCompletionListener { controls?.poke() }
                 video.setOnErrorListener { _, _, _ ->
                     Toast.makeText(activity, "Can't play this file format", Toast.LENGTH_LONG).show()
                     dialog.dismiss()
@@ -71,16 +82,29 @@ internal object VideoPlayer {
                     )
                 }
 
-                val close = TextView(activity)
-                close.text = "\u2715"
-                close.setTextColor(Color.WHITE)
-                close.textSize = 20f
-                close.setPadding(36, 20, 36, 20)
-                close.setBackgroundColor(0x99000000.toInt())
-                close.setOnClickListener { dialog.dismiss() }
-                val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END)
-                lp.setMargins(0, 96, 24, 0)
-                root.addView(close, lp)
+                // Same controls as the in-chat player; picture-in-picture is for video only.
+                val pip: (() -> Unit)? = if (isAudio(path) || !PipPlayer.supported(activity)) null else {
+                    {
+                        val pos = video.currentPosition
+                        val sp = controls?.speed ?: 1f
+                        val m = mpRef
+                        val entered = PipPlayer.enter(activity, path, pos, sp, m?.videoWidth ?: 0, m?.videoHeight ?: 0)
+                        if (entered) dialog.dismiss()
+                        else Toast.makeText(activity, "Picture-in-picture is not available here", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                val ctl = PlayerControls(activity, transport, true, onClose = { dialog.dismiss() }, onFullscreen = null, onPip = pip)
+                controls = ctl
+                root.addView(ctl.layer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                root.setOnClickListener { ctl.toggle() }
+                ctl.poke()
+                root.postOnAnimation(object : Runnable {
+                    override fun run() {
+                        if (current !== dialog) return
+                        ctl.tick()
+                        root.postOnAnimation(this)
+                    }
+                })
 
                 dialog.setContentView(root)
                 dialog.setOnDismissListener {

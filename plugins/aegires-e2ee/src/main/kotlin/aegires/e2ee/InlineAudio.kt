@@ -1,12 +1,12 @@
 package aegires.e2ee
 
 import android.app.Activity
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.MediaPlayer
+import android.os.SystemClock
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -22,7 +22,7 @@ import java.lang.ref.WeakReference
 /**
  * Plays a decrypted audio file IN the chat. The chat shows the audio as a card picture (made by
  * [MediaThumb]); a tap on it lands here, and this draws a player over that card: a play / pause
- * button, the title, a seek bar and "position / length". Found and followed the same way as the
+ * button, the title, a seek bar, "position / length", back and forward 10 s and a speed button (1x to 5x). Found and followed the same way as the
  * video's picture ([InlineVideo.pictureAtLastTouch]); if the card cannot be found the full-screen
  * [VideoPlayer] is used, so a tap always plays.
  *
@@ -31,7 +31,7 @@ import java.lang.ref.WeakReference
  */
 internal object InlineAudio {
     private const val MIN_DP = 40 // an audio card is flat: about 100 dp high
-    private val BLURPLE = 0xFF5865F2.toInt()
+    private const val CHIP_FILL = 0xFF2B2D31.toInt()
 
     private var box: FrameLayout? = null
     private var player: MediaPlayer? = null
@@ -89,11 +89,6 @@ internal object InlineAudio {
         }
     }
 
-    private fun fmt(ms: Int): String {
-        val s = Math.max(ms, 0) / 1000
-        return (s / 60).toString() + ":" + (s % 60).toString().padStart(2, '0')
-    }
-
     private fun show(a: Activity, pic: View, filePath: String, fileTitle: String) {
         val decor = a.window.decorView as? ViewGroup ?: throw IllegalStateException("no decor")
         fun d(v: Float): Int = InlineVideo.dp(a, v)
@@ -103,6 +98,8 @@ internal object InlineAudio {
         targetH = Math.round(rect0.height())
         hiddenSince = 0L
         dragging = false
+        val match = ViewGroup.LayoutParams.MATCH_PARENT
+        val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
 
         // The card: dark, rounded like Discord's cards, and it swallows taps so they do not reach the chat.
         val root = ClipFrame(a)
@@ -117,59 +114,70 @@ internal object InlineAudio {
         val row = LinearLayout(a)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(d(14f), d(6f), d(10f), d(6f))
-        root.addView(row, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        row.setPadding(d(12f), d(6f), d(8f), d(6f))
+        root.addView(row, FrameLayout.LayoutParams(match, match))
 
-        val circle = TextView(a)
-        circle.gravity = Gravity.CENTER
-        circle.setTextColor(Color.WHITE)
-        circle.textSize = 22f
-        circle.text = "\u23F8"
-        val circleBg = GradientDrawable()
-        circleBg.shape = GradientDrawable.OVAL
-        circleBg.setColor(BLURPLE)
-        circle.background = circleBg
-        row.addView(circle, LinearLayout.LayoutParams(d(52f), d(52f)))
+        val circle = PlayerUi.circle(a, "\u23F8", 48f, 20f, PlayerUi.BLURPLE)
+        row.addView(circle, LinearLayout.LayoutParams(d(48f), d(48f)))
 
         val col = LinearLayout(a)
         col.orientation = LinearLayout.VERTICAL
-        val colLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        colLp.leftMargin = d(12f)
+        val colLp = LinearLayout.LayoutParams(0, wrap, 1f)
+        colLp.leftMargin = d(10f)
         row.addView(col, colLp)
 
+        // title row: title, speed, close
+        val head = LinearLayout(a)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
         val titleView = TextView(a)
         titleView.text = if (fileTitle.isBlank()) "Audio" else fileTitle
         titleView.setTextColor(Color.WHITE)
-        titleView.textSize = 15f
+        titleView.textSize = 14f
         titleView.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         titleView.maxLines = 1
         titleView.ellipsize = TextUtils.TruncateAt.END
-        col.addView(titleView)
+        head.addView(titleView, LinearLayout.LayoutParams(0, wrap, 1f))
+        var speed = 1f
+        val chip = PlayerUi.pill(a, "1x", CHIP_FILL) { }
+        head.addView(chip, LinearLayout.LayoutParams(wrap, wrap).also { it.leftMargin = d(6f) })
+        val closeBtn = PlayerUi.pill(a, "\u2715", CHIP_FILL) { close() }
+        head.addView(closeBtn, LinearLayout.LayoutParams(wrap, wrap).also { it.leftMargin = d(6f) })
+        col.addView(head, LinearLayout.LayoutParams(match, wrap))
 
         val seek = SeekBar(a)
-        seek.setPadding(0, 0, 0, 0)
-        seek.progressTintList = ColorStateList.valueOf(BLURPLE)
-        seek.thumbTintList = ColorStateList.valueOf(BLURPLE)
-        col.addView(seek, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d(26f)))
+        seek.setPadding(d(2f), 0, d(2f), 0)
+        PlayerUi.tint(seek)
+        col.addView(seek, LinearLayout.LayoutParams(match, d(24f)))
 
+        // bottom row: back 10 s, time, forward 10 s
+        val foot = LinearLayout(a)
+        foot.orientation = LinearLayout.HORIZONTAL
+        foot.gravity = Gravity.CENTER_VERTICAL
+        val back = PlayerUi.pill(a, "-10", CHIP_FILL) { }
+        val fwd = PlayerUi.pill(a, "+10", CHIP_FILL) { }
         val time = TextView(a)
         time.text = "0:00 / 0:00"
         time.setTextColor(0xFFB5BAC1.toInt())
         time.textSize = 12f
-        col.addView(time)
-
-        val closeBtn = TextView(a)
-        closeBtn.text = "\u2715"
-        closeBtn.setTextColor(0xFFB5BAC1.toInt())
-        closeBtn.textSize = 16f
-        closeBtn.gravity = Gravity.CENTER
-        closeBtn.setPadding(d(10f), d(6f), d(6f), d(6f))
-        closeBtn.setOnClickListener { close() }
-        row.addView(closeBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        time.gravity = Gravity.CENTER
+        foot.addView(back, LinearLayout.LayoutParams(wrap, wrap))
+        foot.addView(time, LinearLayout.LayoutParams(0, wrap, 1f))
+        foot.addView(fwd, LinearLayout.LayoutParams(wrap, wrap))
+        col.addView(foot, LinearLayout.LayoutParams(match, wrap))
 
         val mp = MediaPlayer()
         player = mp
         var ready = false
+        val transport = object : Transport {
+            override val playing: Boolean get() = try { mp.isPlaying } catch (_: Throwable) { false }
+            override val position: Int get() = try { mp.currentPosition } catch (_: Throwable) { 0 }
+            override val duration: Int get() = try { mp.duration } catch (_: Throwable) { 0 }
+            override fun play() { if (ready) mp.start() }
+            override fun pause() { if (ready) mp.pause() }
+            override fun seekTo(ms: Int) { if (ready) mp.seekTo(ms) }
+            override fun setSpeed(speed: Float): Boolean = ready && PlayerUi.applySpeed(mp, speed, playing)
+        }
         mp.setDataSource(filePath)
         mp.setOnPreparedListener {
             ready = true
@@ -183,10 +191,12 @@ internal object InlineAudio {
             if (act != null) VideoPlayer.show(act, filePath, fileTitle)
             true
         }
-        circle.setOnClickListener {
-            if (ready) {
-                if (mp.isPlaying) mp.pause() else mp.start()
-            }
+        circle.setOnClickListener { if (transport.playing) transport.pause() else transport.play() }
+        back.setOnClickListener { PlayerUi.skip(transport, -PlayerUi.SKIP_MS) }
+        fwd.setOnClickListener { PlayerUi.skip(transport, PlayerUi.SKIP_MS) }
+        chip.setOnClickListener {
+            speed = PlayerUi.cycle(transport, speed)
+            chip.text = PlayerUi.speedLabel(speed)
         }
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
@@ -206,18 +216,29 @@ internal object InlineAudio {
         decor.addView(root, FrameLayout.LayoutParams(targetW, targetH, Gravity.TOP or Gravity.START))
         box = root
         follow(root, pic, mp)
+        var lastTick = 0L
+        var lastText = ""
+        var lastSymbol = ""
         root.postOnAnimation(object : Runnable {
             override fun run() {
                 if (box !== root || player !== mp) return
                 if (!follow(root, pic, mp)) return
-                if (ready) {
-                    val pos = try { mp.currentPosition } catch (_: Throwable) { 0 }
+                // The labels are refreshed five times a second, not on every frame.
+                val now = SystemClock.uptimeMillis()
+                if (ready && now - lastTick >= 200L) {
+                    lastTick = now
+                    val pos = transport.position
                     if (!dragging) seek.progress = pos
-                    val text = fmt(pos) + " / " + fmt(seek.max)
-                    if (time.text.toString() != text) time.text = text
-                    val playing = try { mp.isPlaying } catch (_: Throwable) { false }
-                    val symbol = if (playing) "\u23F8" else "\u25B6"
-                    if (circle.text.toString() != symbol) circle.text = symbol
+                    val text = PlayerUi.fmt(pos) + " / " + PlayerUi.fmt(seek.max)
+                    if (text != lastText) {
+                        time.text = text
+                        lastText = text
+                    }
+                    val symbol = if (transport.playing) "\u23F8" else "\u25B6"
+                    if (symbol != lastSymbol) {
+                        circle.text = symbol
+                        lastSymbol = symbol
+                    }
                 }
                 root.postOnAnimation(this)
             }

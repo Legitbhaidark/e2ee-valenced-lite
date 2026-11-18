@@ -4,6 +4,12 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34-dev2
+- New player controls for video (in chat and full screen): back 10 s, forward 10 s, play / pause, playback speed 1x, 1.25x, 1.5x, 2x, 3x, 4x, 5x, seek bar with time, and picture-in-picture. They hide by themselves after 2.5 s; tap the video to bring them back.
+- The audio player card has the same speed and 10 s buttons and a cleaner look.
+- Full-screen player now uses the same controls instead of Android's plain bar.
+- Picture-in-picture needs the host app and the phone to allow it; if not, a short message says so and nothing else changes.
+
 ## 0.1.34-dev1
 - Fixed: the in-chat video and audio players were drawn over Discord's message box when you scrolled. They now slide away under the box (and stay under it for touches) exactly like Discord's own attachments.
 

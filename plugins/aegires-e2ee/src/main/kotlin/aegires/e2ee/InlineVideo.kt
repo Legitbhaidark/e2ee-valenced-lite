@@ -4,15 +4,12 @@ import android.app.Activity
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.RectF
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
+import android.media.MediaPlayer
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.SeekBar
-import android.widget.TextView
 import android.widget.VideoView
 import java.io.File
 import java.lang.ref.WeakReference
@@ -26,19 +23,18 @@ import java.lang.ref.WeakReference
  * tree; the deepest view there that is picture-sized is the target. If that fails (no recent touch, no
  * suitable view, a playback error) the full-screen [VideoPlayer] is used, so a tap always plays.
  *
- * The player: tap = pause / play, a seek bar, a button for full screen (continues at the same
- * position) and a close button. It stops by itself when its picture is scrolled away, replaced by
- * another message (the chat re-uses views), or when the video ends.
+ * The player: one tap shows or hides the controls ([PlayerControls]: back / forward 10 s, play and
+ * pause, seek bar, speed 1x to 5x, full screen, picture-in-picture, close); three quick taps go to full
+ * screen. It stops by itself when its picture is scrolled away, replaced by another message (the
+ * chat re-uses views), or when the video ends.
  */
 internal object InlineVideo {
     private const val MIN_DP = 100 // smaller than this is not a picture
     private const val TOUCH_MAX_AGE_MS = 1500L
-    private const val CONTROLS_MS = 2000L // the controls hide themselves after this long
     private const val VIEW_BUDGET = 20000 // most views looked at for one tap
 
     private var box: FrameLayout? = null
     private var video: VideoView? = null
-    private var seek: SeekBar? = null
     private var host: WeakReference<Activity>? = null
     private var target: WeakReference<View>? = null
     private var path = ""
@@ -46,7 +42,6 @@ internal object InlineVideo {
     private var targetW = 0
     private var targetH = 0
     private var hiddenSince = 0L
-    private var dragging = false
     private var taps = 0
     private var lastTapAt = 0L
     private var pendingToggle: Runnable? = null
@@ -94,7 +89,6 @@ internal object InlineVideo {
         pendingToggle = null
         box = null
         video = null
-        seek = null
         target = null
         host = null
         try {
@@ -238,18 +232,29 @@ internal object InlineVideo {
         targetW = Math.round(rect0.width())
         targetH = Math.round(rect0.height())
         hiddenSince = 0L
-        dragging = false
 
         val root = ClipFrame(a)
         root.setBackgroundColor(Color.BLACK)
         root.isClickable = true
 
         val vv = VideoView(a)
+        var mpRef: MediaPlayer? = null
+        var controls: PlayerControls? = null
+        val transport = object : Transport {
+            override val playing: Boolean get() = try { vv.isPlaying } catch (_: Throwable) { false }
+            override val position: Int get() = try { vv.currentPosition } catch (_: Throwable) { 0 }
+            override val duration: Int get() = try { vv.duration } catch (_: Throwable) { 0 }
+            override fun play() = vv.start()
+            override fun pause() = vv.pause()
+            override fun seekTo(ms: Int) = vv.seekTo(ms)
+            override fun setSpeed(speed: Float): Boolean = PlayerUi.applySpeed(mpRef, speed, playing)
+        }
         vv.setVideoPath(filePath)
         vv.setOnPreparedListener { mp ->
+            mpRef = mp
             mp.isLooping = false
             vv.start()
-            seek?.max = vv.duration.coerceAtLeast(1)
+            controls?.applyCurrentSpeed()
         }
         vv.setOnCompletionListener { close() } // back to the picture
         vv.setOnErrorListener { _, _, _ ->
@@ -259,20 +264,29 @@ internal object InlineVideo {
             true
         }
         root.addView(vv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
-        // Everything the user can press lives in one layer ("ctl") that hides itself 2 seconds after it
-        // appears. One tap on the video shows it again (or hides it at once); three quick taps go to
-        // full screen. The first tap (the one that started the player) counts as the first of three.
-        val ctl = FrameLayout(a)
-        val hint = TextView(a)
-        val hideCtl = Runnable {
-            ctl.visibility = View.GONE
-            hint.visibility = View.GONE // the hint is only for the first time
+
+        val fullScreen = {
+            val pos = vv.currentPosition
+            val act = host?.get()
+            close()
+            if (act != null) VideoPlayer.show(act, filePath, fileTitle, pos)
         }
-        val showCtl = {
-            ctl.visibility = View.VISIBLE
-            ctl.removeCallbacks(hideCtl)
-            ctl.postDelayed(hideCtl, CONTROLS_MS)
-        }
+        val ctl = PlayerControls(
+            a, transport, false,
+            onClose = { close() },
+            onFullscreen = fullScreen,
+            onPip = {
+                val pos = vv.currentPosition
+                val sp = controls?.speed ?: 1f
+                if (PipPlayer.enter(a, filePath, pos, sp, targetW, targetH)) close()
+                else android.widget.Toast.makeText(a, "Picture-in-picture is not available here", android.widget.Toast.LENGTH_SHORT).show()
+            },
+        )
+        controls = ctl
+        root.addView(ctl.layer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        // One tap on the video shows or hides the controls; three quick taps go to full screen. The
+        // first tap (the one that started the player) counts as the first of three.
         taps = 1
         lastTapAt = SystemClock.uptimeMillis()
         root.setOnClickListener {
@@ -283,111 +297,28 @@ internal object InlineVideo {
             pendingToggle = null
             if (taps >= 3) {
                 taps = 0
-                val pos = vv.currentPosition
-                val act = host?.get()
-                close()
-                if (act != null) VideoPlayer.show(act, filePath, fileTitle, pos)
+                fullScreen()
             } else {
-                // One tap shows or hides the controls, but only once it is clear no third tap follows.
-                val toggle = Runnable {
-                    if (ctl.visibility == View.VISIBLE) {
-                        ctl.removeCallbacks(hideCtl)
-                        hideCtl.run()
-                    } else {
-                        showCtl()
-                    }
-                }
+                // Only once it is clear no third tap follows.
+                val toggle = Runnable { ctl.toggle() }
                 pendingToggle = toggle
                 root.postDelayed(toggle, 350L)
             }
         }
-        root.addView(ctl, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-
-        val bar = SeekBar(a)
-        bar.setPadding(dp(a, 6f), 0, dp(a, 6f), 0)
-        bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                if (fromUser) vv.seekTo(p)
-            }
-
-            override fun onStartTrackingTouch(s: SeekBar?) {
-                dragging = true
-                ctl.removeCallbacks(hideCtl) // stay while the finger is on the bar
-            }
-
-            override fun onStopTrackingTouch(s: SeekBar?) {
-                dragging = false
-                showCtl()
-            }
-        })
-        ctl.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 28f), Gravity.BOTTOM))
-
-        hint.text = "Tap 3 times quickly for full screen"
-        hint.setTextColor(Color.WHITE)
-        hint.textSize = 11f
-        hint.setPadding(dp(a, 8f), dp(a, 3f), dp(a, 8f), dp(a, 3f))
-        val hintBg = GradientDrawable()
-        hintBg.cornerRadius = dp(a, 10f).toFloat()
-        hintBg.setColor(0xAA000000.toInt())
-        hint.background = hintBg
-        val hlp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
-        hlp.bottomMargin = dp(a, 34f)
-        ctl.addView(hint, hlp)
-
-        ctl.addView(pill(a, "\u2715") { close() }, corner(a, Gravity.TOP or Gravity.END))
-        ctl.addView(
-            pill(a, "\u26F6") {
-                val pos = vv.currentPosition
-                val act = host?.get()
-                close()
-                if (act != null) VideoPlayer.show(act, filePath, fileTitle, pos)
-            },
-            corner(a, Gravity.TOP or Gravity.START),
-        )
-        val playPause = pill(a, "\u23F8") {
-            if (vv.isPlaying) vv.pause() else vv.start()
-            showCtl()
-        }
-        ctl.addView(playPause, corner(a, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
 
         decor.addView(root, FrameLayout.LayoutParams(targetW, targetH, Gravity.TOP or Gravity.START))
         box = root
         video = vv
-        seek = bar
         follow(root, pic, decor)
-        showCtl()
+        ctl.poke()
         root.postOnAnimation(object : Runnable {
             override fun run() {
                 if (box !== root) return
                 if (!follow(root, pic, decor)) return
-                if (!dragging) seek?.progress = vv.currentPosition
-                val symbol = if (vv.isPlaying) "\u23F8" else "\u25B6"
-                if (playPause.text.toString() != symbol) playPause.text = symbol
+                ctl.tick()
                 root.postOnAnimation(this)
             }
         })
-    }
-
-    private fun corner(a: Activity, gravity: Int): FrameLayout.LayoutParams {
-        val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, gravity)
-        lp.setMargins(dp(a, 6f), dp(a, 6f), dp(a, 6f), dp(a, 6f))
-        return lp
-    }
-
-    private fun pill(a: Activity, label: String, onTap: () -> Unit): TextView {
-        val t = TextView(a)
-        t.text = label
-        t.setTextColor(Color.WHITE)
-        t.textSize = 14f
-        t.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        t.gravity = Gravity.CENTER
-        t.setPadding(dp(a, 10f), dp(a, 4f), dp(a, 10f), dp(a, 4f))
-        val bg = GradientDrawable()
-        bg.cornerRadius = dp(a, 14f).toFloat()
-        bg.setColor(0xAA000000.toInt())
-        t.background = bg
-        t.setOnClickListener { onTap() }
-        return t
     }
 
     /**
