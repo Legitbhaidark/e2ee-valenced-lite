@@ -467,8 +467,16 @@ public final class Crypto {
         byte[] out = new byte[length];
         byte[] t = new byte[0];
         int pos = 0;
+        // One Mac keyed once with the PRK for every output block (doFinal() resets it to that key), instead of
+        // a provider lookup and key setup per block. The platform's HmacSHA256 already uses the ARMv8 SHA-2
+        // instructions where the device has them, so no SHA-256 is hand-written in Java.
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(prk, "HmacSHA256"));
         for (int i = 1; pos < length; i++) {
-            t = hmac(prk, t, info, new byte[] {(byte) i});
+            mac.update(t);
+            mac.update(info);
+            mac.update((byte) i);
+            t = mac.doFinal();
             int n = Math.min(t.length, length - pos);
             System.arraycopy(t, 0, out, pos, n);
             pos += n;

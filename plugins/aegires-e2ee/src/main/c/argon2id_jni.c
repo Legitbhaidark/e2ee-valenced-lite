@@ -9,6 +9,27 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ARMv8 SHA-2 instructions (AArch64 only). The code is compiled with a per-function target attribute, so no
+ * global -march flag is needed and the same .so still loads on CPUs without the extension: the hardware
+ * path is picked at run time (AT_HWCAP) and verified against the portable code before it is trusted. */
+#if defined(__aarch64__) && (defined(__linux__) || defined(__ANDROID__)) && defined(__ARM_NEON) \
+    && (defined(__clang__) || defined(__GNUC__))
+#  include <arm_neon.h>
+#  include <sys/auxv.h>
+#  include <asm/hwcap.h>
+#  ifndef HWCAP_SHA2
+#    define HWCAP_SHA2 (1 << 6)
+#  endif
+#  if defined(__clang__)
+#    define SHA2_TARGET __attribute__((target("sha2")))
+#  else
+#    define SHA2_TARGET __attribute__((target("+crypto")))
+#  endif
+#  define AEGIRES_SHA256_HW 1
+#else
+#  define AEGIRES_SHA256_HW 0
+#endif
+
 
 #define WORDS 128
 #define SYNC_POINTS 4
@@ -247,16 +268,89 @@ static const uint32_t K256[64] = {
 #define EP1(x) (ROR32(x,6)^ROR32(x,11)^ROR32(x,25))
 #define SIG0(x) (ROR32(x,7)^ROR32(x,18)^((x)>>3))
 #define SIG1(x) (ROR32(x,17)^ROR32(x,19)^((x)>>10))
-static void sha256_transform(SHA256_CTX *ctx, const uint8_t data[]){
+/* Portable block function (kept unchanged as the fallback and as the reference for the hardware path). */
+static void sha256_transform_sw(uint32_t state[8], const uint8_t data[]){
   uint32_t a,b,c,d,e,f,g,h,i,j,t1,t2,m[64];
   for(i=0,j=0;i<16;++i,j+=4) m[i]=((uint32_t)data[j]<<24)|((uint32_t)data[j+1]<<16)|((uint32_t)data[j+2]<<8)|((uint32_t)data[j+3]);
   for(;i<64;++i) m[i]=SIG1(m[i-2])+m[i-7]+SIG0(m[i-15])+m[i-16];
-  a=ctx->state[0]; b=ctx->state[1]; c=ctx->state[2]; d=ctx->state[3];
-  e=ctx->state[4]; f=ctx->state[5]; g=ctx->state[6]; h=ctx->state[7];
+  a=state[0]; b=state[1]; c=state[2]; d=state[3];
+  e=state[4]; f=state[5]; g=state[6]; h=state[7];
   for(i=0;i<64;++i){ t1=h+EP1(e)+CH(e,f,g)+K256[i]+m[i]; t2=EP0(a)+MAJ(a,b,c); h=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2; }
-  ctx->state[0]+=a; ctx->state[1]+=b; ctx->state[2]+=c; ctx->state[3]+=d;
-  ctx->state[4]+=e; ctx->state[5]+=f; ctx->state[6]+=g; ctx->state[7]+=h;
+  state[0]+=a; state[1]+=b; state[2]+=c; state[3]+=d;
+  state[4]+=e; state[5]+=f; state[6]+=g; state[7]+=h;
 }
+static void sha256_blocks_sw(uint32_t state[8], const uint8_t *data, size_t nblocks){
+  while(nblocks--){ sha256_transform_sw(state, data); data += 64; }
+}
+
+#if AEGIRES_SHA256_HW
+/* ARMv8 Cryptography Extensions: SHA256H / SHA256H2 / SHA256SU0 / SHA256SU1, 4 rounds per instruction pair. */
+#define SHA_RND(M, k) do { uint32x4_t tmp_ = vaddq_u32((M), vld1q_u32(K256 + (k))); uint32x4_t t2_ = s0; \
+    s0 = vsha256hq_u32(s0, s1, tmp_); s1 = vsha256h2q_u32(s1, t2_, tmp_); } while(0)
+#define SHA_SCH(M0, M1, M2, M3) ((M0) = vsha256su1q_u32(vsha256su0q_u32((M0), (M1)), (M2), (M3)))
+SHA2_TARGET
+static void sha256_blocks_hw(uint32_t state[8], const uint8_t *data, size_t nblocks){
+  uint32x4_t s0 = vld1q_u32(&state[0]), s1 = vld1q_u32(&state[4]);
+  while(nblocks--){
+    uint32x4_t abcd = s0, efgh = s1;
+    uint32x4_t m0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data)));
+    uint32x4_t m1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 16)));
+    uint32x4_t m2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 32)));
+    uint32x4_t m3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 48)));
+    SHA_RND(m0,  0); SHA_SCH(m0, m1, m2, m3);
+    SHA_RND(m1,  4); SHA_SCH(m1, m2, m3, m0);
+    SHA_RND(m2,  8); SHA_SCH(m2, m3, m0, m1);
+    SHA_RND(m3, 12); SHA_SCH(m3, m0, m1, m2);
+    SHA_RND(m0, 16); SHA_SCH(m0, m1, m2, m3);
+    SHA_RND(m1, 20); SHA_SCH(m1, m2, m3, m0);
+    SHA_RND(m2, 24); SHA_SCH(m2, m3, m0, m1);
+    SHA_RND(m3, 28); SHA_SCH(m3, m0, m1, m2);
+    SHA_RND(m0, 32); SHA_SCH(m0, m1, m2, m3);
+    SHA_RND(m1, 36); SHA_SCH(m1, m2, m3, m0);
+    SHA_RND(m2, 40); SHA_SCH(m2, m3, m0, m1);
+    SHA_RND(m3, 44); SHA_SCH(m3, m0, m1, m2);
+    SHA_RND(m0, 48);
+    SHA_RND(m1, 52);
+    SHA_RND(m2, 56);
+    SHA_RND(m3, 60);
+    s0 = vaddq_u32(s0, abcd); s1 = vaddq_u32(s1, efgh);
+    data += 64;
+  }
+  vst1q_u32(&state[0], s0); vst1q_u32(&state[4], s1);
+}
+#endif
+
+/* 1 when the hardware block function is present AND matches the portable one on a test input, else 0.
+ * Decided once; a race between threads only repeats the same idempotent check. */
+static volatile int sha256_hw_state = -1;
+static int sha256_hw_ok(void){
+  int v = sha256_hw_state;
+  if (v >= 0) return v;
+  v = 0;
+#if AEGIRES_SHA256_HW
+  if (getauxval(AT_HWCAP) & HWCAP_SHA2) {
+    uint8_t blk[3 * 64];
+    uint32_t a[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    uint32_t b[8];
+    for (int i = 0; i < (int)sizeof blk; i++) blk[i] = (uint8_t)(i * 131 + 7);
+    memcpy(b, a, sizeof a);
+    sha256_blocks_sw(a, blk, 3);
+    sha256_blocks_hw(b, blk, 3);
+    v = (memcmp(a, b, sizeof a) == 0) ? 1 : 0;
+  }
+#endif
+  sha256_hw_state = v;
+  return v;
+}
+
+static void sha256_blocks(SHA256_CTX *ctx, const uint8_t *data, size_t nblocks){
+#if AEGIRES_SHA256_HW
+  if (sha256_hw_ok()) { sha256_blocks_hw(ctx->state, data, nblocks); return; }
+#endif
+  sha256_blocks_sw(ctx->state, data, nblocks);
+}
+static void sha256_transform(SHA256_CTX *ctx, const uint8_t data[]){ sha256_blocks(ctx, data, 1); }
+
 static void sha256_init(SHA256_CTX *ctx){
   ctx->count=0;
   ctx->state[0]=0x6a09e667; ctx->state[1]=0xbb67ae85; ctx->state[2]=0x3c6ef372; ctx->state[3]=0xa54ff53a;
@@ -271,7 +365,7 @@ static void sha256_update(SHA256_CTX *ctx, const uint8_t *data, size_t len){
     if(fill < 64) return;
     sha256_transform(ctx, ctx->buffer);
   }
-  while(len >= 64){ sha256_transform(ctx, data); data += 64; len -= 64; }
+  if(len >= 64){ size_t nb = len / 64; sha256_blocks(ctx, data, nb); data += nb * 64; len -= nb * 64; }
   if(len) memcpy(ctx->buffer, data, len);
 }
 static void sha256_final(SHA256_CTX *ctx, uint8_t hash[32]){
@@ -282,15 +376,27 @@ static void sha256_final(SHA256_CTX *ctx, uint8_t hash[32]){
   sha256_transform(ctx, ctx->buffer);
   for(i=0;i<4;++i) for(int j=0;j<8;++j) hash[i+j*4] = (uint8_t)((ctx->state[j] >> (24-i*8)) & 0xff);
 }
-static void hmac_sha256(const uint8_t *key,size_t keylen,const uint8_t *data,size_t datalen,uint8_t out[32]){
+
+/* HMAC with the two key-dependent blocks (ipad / opad) hashed once: HKDF-Expand reuses the same PRK for
+ * every output block, so this saves two compressions per HMAC call after the first. */
+typedef struct { SHA256_CTX in, out; } HMAC_CTX;
+static void hmac_init(HMAC_CTX *h, const uint8_t *key, size_t keylen){
   uint8_t k_ipad[64], k_opad[64], tk[32]; const uint8_t *k = key; size_t klen = keylen;
-  if(klen>64){ SHA256_CTX tctx; sha256_init(&tctx); sha256_update(&tctx,key,klen); sha256_final(&tctx,tk); k=tk; klen=32; }
+  if(klen>64){ SHA256_CTX tctx; sha256_init(&tctx); sha256_update(&tctx,key,klen); sha256_final(&tctx,tk); k=tk; klen=32; memset(&tctx,0,sizeof tctx); }
   memset(k_ipad,0,64); memset(k_opad,0,64); memcpy(k_ipad,k,klen); memcpy(k_opad,k,klen);
   for(int i=0;i<64;i++){ k_ipad[i]^=0x36; k_opad[i]^=0x5c; }
+  sha256_init(&h->in);  sha256_update(&h->in,k_ipad,64);
+  sha256_init(&h->out); sha256_update(&h->out,k_opad,64);
+  memset(k_ipad,0,64); memset(k_opad,0,64); memset(tk,0,32);
+}
+static void hmac_run(const HMAC_CTX *h, const uint8_t *data, size_t datalen, uint8_t out[32]){
   SHA256_CTX ctx; uint8_t inner[32];
-  sha256_init(&ctx); sha256_update(&ctx,k_ipad,64); sha256_update(&ctx,data,datalen); sha256_final(&ctx,inner);
-  sha256_init(&ctx); sha256_update(&ctx,k_opad,64); sha256_update(&ctx,inner,32); sha256_final(&ctx,out);
-  memset(k_ipad,0,64); memset(k_opad,0,64); memset(tk,0,32); memset(inner,0,32);
+  ctx = h->in;  sha256_update(&ctx,data,datalen); sha256_final(&ctx,inner);
+  ctx = h->out; sha256_update(&ctx,inner,32);     sha256_final(&ctx,out);
+  memset(&ctx,0,sizeof ctx); memset(inner,0,32);
+}
+static void hmac_sha256(const uint8_t *key,size_t keylen,const uint8_t *data,size_t datalen,uint8_t out[32]){
+  HMAC_CTX h; hmac_init(&h,key,keylen); hmac_run(&h,data,datalen,out); memset(&h,0,sizeof h);
 }
 
 /* HKDF-SHA-256 (RFC 5869): extract with `salt`, expand to `len` bytes (len <= 255 * 32). */
@@ -298,19 +404,28 @@ static void hkdf_sha256(const uint8_t *salt, size_t sl, const uint8_t *ikm, size
                         const uint8_t *info, size_t infol, uint8_t *okm, size_t len, uint8_t *work){
   uint8_t prk[32], t[32]; size_t tlen = 0, pos = 0; uint8_t ctr = 1;
   static const uint8_t zeros[32] = {0};
+  HMAC_CTX h;
   if (sl == 0) { salt = zeros; sl = 32; }
   hmac_sha256(salt, sl, ikm, il, prk);
+  hmac_init(&h, prk, 32);
   while (pos < len) {
     size_t inlen = tlen + infol + 1;       /* work holds T(i-1) | info | counter */
     if (tlen) memcpy(work, t, tlen);
     if (infol) memcpy(work + tlen, info, infol);
     work[inlen - 1] = ctr;
-    hmac_sha256(prk, 32, work, inlen, t);
+    hmac_run(&h, work, inlen, t);
     tlen = 32;
     size_t n = (len - pos < 32) ? len - pos : 32;
     memcpy(okm + pos, t, n); pos += n; ctr++;
   }
-  memset(prk, 0, 32); memset(t, 0, 32);
+  memset(prk, 0, 32); memset(t, 0, 32); memset(&h, 0, sizeof h);
+}
+
+/* boolean sha256HwNative(): true when HKDF/HMAC/SHA-256 run on the ARMv8 SHA-2 instructions in this process. */
+JNIEXPORT jboolean JNICALL
+Java_aegires_e2ee_NativeArgon2_sha256HwNative(JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    return sha256_hw_ok() ? JNI_TRUE : JNI_FALSE;
 }
 
 /*

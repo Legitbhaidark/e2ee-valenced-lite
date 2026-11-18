@@ -65,6 +65,14 @@ public class NativeArgon2Test {
         byte[] hs = new byte[16], hi = new byte[32], hn = "ctx".getBytes();
         for (int i = 0; i < 32; i++) { hi[i] = (byte) i; if (i < 16) hs[i] = (byte) (i * 9); }
         check(java.util.Arrays.equals(NativeOps.hkdfJava(hs, hi, hn, 76, 1), NativeArgon2.hkdf(hs, hi, hn, 76, 1)), "C HKDF == Java HKDF (76 bytes)");
+        String shaEngine = NativeArgon2.sha256Engine();
+        check(shaEngine.equals("hw") || shaEngine.equals("sw"), "SHA-256 engine reported: " + shaEngine);
+        // lengths around the 32-byte HMAC block and a salt longer than the 64-byte HMAC block (hashed first)
+        byte[] longSalt = new byte[100];
+        for (int i = 0; i < longSalt.length; i++) longSalt[i] = (byte) (i * 5 + 1);
+        for (int len : new int[] {1, 31, 32, 33, 64, 255 * 32}) {
+            check(java.util.Arrays.equals(NativeOps.hkdfJava(longSalt, hi, hn, len, 1), NativeArgon2.hkdf(longSalt, hi, hn, len, 1)), "C HKDF == Java HKDF (long salt, " + len + " bytes)");
+        }
         // RFC 5869 test case 1 (independent known answer)
         byte[] rIkm = new byte[22]; java.util.Arrays.fill(rIkm, (byte) 0x0b);
         byte[] rSalt = new byte[13]; for (int i = 0; i < 13; i++) rSalt[i] = (byte) i;
