@@ -4,6 +4,13 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.33 - stable
+- The header button shows "🔒 E2EE" when encryption is on and "🔒 OFF" when it is off.
+- The button stays glued to the header icons (also while screens slide), sits left of the call and video icons in a DM, and is hidden in the DM list and in chats without a key.
+- A short toast after installing or updating tells you the button can be tapped to switch encryption on or off; the settings explain it too.
+- Encrypted messages that cannot be decrypted (wrong key) now get the lock beside the name as well.
+- Clean-up: about 140 lines of dead code removed.
+
 ## 0.1.33-dev3
 - Small clean-up: removed about 140 lines of dead code (the abandoned slash-command installer, unused WebView-engine stand-ins, unused crypto and URL helpers, unused imports).
 - The header button asks the native side why it is hidden every 2 s instead of every poll, and no longer allocates objects on every frame.
