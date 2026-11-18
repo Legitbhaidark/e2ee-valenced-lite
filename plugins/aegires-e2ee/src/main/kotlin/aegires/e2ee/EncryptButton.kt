@@ -19,13 +19,15 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * The small "E2EE" on/off button that sits in the channel header, just left of Discord's search icon.
+ * The small "🔒 E2EE" / "🔒 OFF" button that sits in the channel header, just left of the header icons:
+ * left of the search icon in a server channel, left of the call and video icons in a DM.
  *
  * Discord draws its screens with React Native, so a view cannot be added to its header safely (the
  * layout engine owns those views). The button is therefore a separate native overlay on the activity's
  * window. Each time the window's layout changes it looks for the header's search icon (a view whose
- * accessibility label contains "search", near the top of the screen) and puts itself to the left of it.
- * No search icon on screen (a different screen, a different language) means no button.
+ * accessibility label contains "search", near the top of the screen) and puts itself to the left of the
+ * leftmost icon of that row that is a search, call or video icon. No search icon on screen (a different
+ * screen, a different language) means no button, and so does a screen without a message box (the DM list).
  *
  * The JS side decides what the button shows ([set]) and polls [takeTaps] to learn about presses.
  * States: "on", "off", "locked" (built-in key: always on, a press only reports), "hide".
@@ -33,6 +35,9 @@ import java.util.concurrent.atomic.AtomicInteger
 internal object EncryptButton {
     private const val HEADER_DP = 200 // the search icon lives in the top 200 dp
     private const val MAX_ICON_DP = 96 // and is a small view
+    private val ICON_WORDS = listOf("search", "call", "video", "phone") // header icons the button must stay left of
+    private const val LABEL_ON = "\uD83D\uDD12 E2EE" // lock + E2EE
+    private const val LABEL_OFF = "\uD83D\uDD12 OFF" // lock + OFF
 
     private var view: TextView? = null
     private var host: WeakReference<Activity>? = null
@@ -40,7 +45,9 @@ internal object EncryptButton {
     private var observer: ViewTreeObserver? = null
     private var lifecycle: Application.ActivityLifecycleCallbacks? = null
     private var app: Application? = null
-    private var searchIcon: WeakReference<View>? = null
+    private var searchIcon: WeakReference<View>? = null // the leftmost header icon the button sits next to
+    private var composer: WeakReference<View>? = null // the message box of the open chat
+    private var composerScanAt = 0L
     private var state = "hide"
     private var placing = false
     private var why = "not started" // why the button is shown or hidden right now (Diagnostics)
@@ -150,7 +157,7 @@ internal object EncryptButton {
         detach()
         val decor = activity.window.decorView as? ViewGroup ?: return
         val tv = TextView(activity)
-        tv.text = "E2EE"
+        tv.text = LABEL_ON
         tv.textSize = 11f
         tv.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         tv.gravity = Gravity.CENTER
@@ -209,13 +216,13 @@ internal object EncryptButton {
             "on", "locked" -> {
                 bg.setColor(0xFF23A55A.toInt())
                 tv.setTextColor(Color.WHITE)
-                tv.text = "E2EE"
+                tv.text = LABEL_ON
             }
             else -> {
                 bg.setColor(0x33808080)
                 bg.setStroke(dp(a, 1f), 0xFF80848E.toInt())
                 tv.setTextColor(0xFFB5BAC1.toInt())
-                tv.text = "E2EE"
+                tv.text = LABEL_OFF
             }
         }
         tv.background = bg
@@ -241,6 +248,11 @@ internal object EncryptButton {
             // screen laid over the chat), and not on the search screen.
             if (isCovered(icon, decor, a)) {
                 why = "hidden: a full-screen view covers the chat header"
+                tv.visibility = View.INVISIBLE
+                return
+            }
+            if (!hasComposer(decor, a)) {
+                why = "hidden: no message box on screen (DM list or another screen)"
                 tv.visibility = View.INVISIBLE
                 return
             }
@@ -331,14 +343,66 @@ internal object EncryptButton {
         return scan(root, 0)
     }
 
+    /**
+     * The view the button goes left of: the leftmost search, call or video icon on the same row as the
+     * search icon. A DM has call and video icons next to the search icon; a server channel only has search.
+     */
     private fun findSearchIcon(a: Activity, decor: ViewGroup): View? {
         val screen = Rect(0, 0, a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels)
+        val maxIcon = dp(a, MAX_ICON_DP.toFloat())
         val cached = searchIcon?.get()
-        if (cached != null && isSearchIcon(cached, screen, dp(a, MAX_ICON_DP.toFloat()))) return cached
+        if (cached != null && isHeaderIcon(cached, screen, maxIcon, ICON_WORDS)) return cached
+        val icons = ArrayList<View>()
+        walk(decor, 0, dp(a, HEADER_DP.toFloat()), maxIcon, screen, icons)
+        // Later siblings are drawn on top, so the LAST valid search icon is the one on screen.
+        val search = icons.lastOrNull { (it.contentDescription ?: "").contains("search", ignoreCase = true) }
+        if (search == null) {
+            searchIcon = null
+            return null
+        }
+        val sy = IntArray(2)
+        search.getLocationOnScreen(sy)
+        val rowMid = sy[1] + search.height / 2
+        var best: View = search
+        var bestX = sy[0]
+        val loc = IntArray(2)
+        for (v in icons) {
+            v.getLocationOnScreen(loc)
+            val mid = loc[1] + v.height / 2
+            if (Math.abs(mid - rowMid) > search.height / 2 + 1) continue // another row
+            if (loc[0] < bestX) {
+                best = v
+                bestX = loc[0]
+            }
+        }
+        searchIcon = WeakReference(best)
+        return best
+    }
+
+    /** A visible message box in the lower part of the screen: the chat screen has one, the DM list does not. */
+    private fun hasComposer(decor: ViewGroup, a: Activity): Boolean {
+        val h = a.resources.displayMetrics.heightPixels
+        fun ok(v: View?): Boolean {
+            if (v == null || !v.isAttachedToWindow || !v.isShown) return false
+            val r = Rect()
+            return v.getGlobalVisibleRect(r) && r.top > h * 35 / 100
+        }
+        if (ok(composer?.get())) return true
+        val now = System.currentTimeMillis()
+        if (now - composerScanAt < 400) return false // a miss is not re-scanned on every layout pass
+        composerScanAt = now
         val found = arrayOfNulls<View>(1)
-        walk(decor, 0, dp(a, HEADER_DP.toFloat()), dp(a, MAX_ICON_DP.toFloat()), screen, found)
-        searchIcon = found[0]?.let { WeakReference(it) }
-        return found[0]
+        fun scan(v: View) {
+            if (found[0] != null || v === view || v.visibility != View.VISIBLE) return
+            if (v is EditText && ok(v)) {
+                found[0] = v
+                return
+            }
+            if (v is ViewGroup) for (i in v.childCount - 1 downTo 0) scan(v.getChildAt(i))
+        }
+        scan(decor)
+        composer = found[0]?.let { WeakReference(it) }
+        return found[0] != null
     }
 
     /**
@@ -346,10 +410,10 @@ internal object EncryptButton {
      * can stay in the view tree, hidden behind the new one or moved off to the side; their icons must not
      * count, or the button follows one of them and "disappears".
      */
-    private fun isSearchIcon(v: View, screen: Rect, maxIcon: Int): Boolean {
+    private fun isHeaderIcon(v: View, screen: Rect, maxIcon: Int, words: List<String>): Boolean {
         if (!v.isAttachedToWindow || !v.isShown || v.alpha <= 0.01f) return false
         val d = v.contentDescription
-        if (d == null || !d.contains("search", ignoreCase = true)) return false
+        if (d == null || words.none { d.contains(it, ignoreCase = true) }) return false
         if (v.width !in 1..maxIcon || v.height !in 1..maxIcon) return false
         val r = Rect()
         if (!v.getGlobalVisibleRect(r) || r.isEmpty) return false
@@ -359,10 +423,10 @@ internal object EncryptButton {
         return inside.width() * 2 >= v.width && inside.height() * 2 >= v.height
     }
 
-    /** Depth-first over the top of the screen only. Later siblings are drawn on top, so the LAST valid icon wins. */
-    private fun walk(v: View, offY: Int, limit: Int, maxIcon: Int, screen: Rect, found: Array<View?>) {
+    /** Depth-first over the top of the screen only; collects every header icon (in drawing order). */
+    private fun walk(v: View, offY: Int, limit: Int, maxIcon: Int, screen: Rect, found: ArrayList<View>) {
         if (v === view || v.visibility != View.VISIBLE) return
-        if (isSearchIcon(v, screen, maxIcon)) found[0] = v
+        if (isHeaderIcon(v, screen, maxIcon, ICON_WORDS)) found.add(v)
         if (v is ViewGroup) {
             for (i in 0 until v.childCount) {
                 val c = v.getChildAt(i)

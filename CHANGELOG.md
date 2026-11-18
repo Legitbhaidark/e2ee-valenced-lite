@@ -4,6 +4,12 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.33-dev1
+- The header button now reads "🔒 E2EE" when encryption is on and "🔒 OFF" when it is off.
+- Fixed: the button no longer shows in the DM list, only inside a chat.
+- Fixed: in a DM the button sits left of the call and video icons and no longer covers the video call icon.
+- A short toast after installing or updating the plugin says the button can be tapped to switch encryption on or off; the settings explain it too.
+
 ## 0.1.32 - stable
 - The C Argon2id library is now built for all four Android CPU types (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`), so every device gets the native speed.
 - Plugin zips are also kept as downloadable artifacts on every release run.

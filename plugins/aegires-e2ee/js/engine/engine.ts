@@ -190,6 +190,11 @@ export async function nativeEncButton(state: "on" | "off" | "locked" | "hide"): 
   await callNative("encbutton", [state], 3000);
 }
 
+/** A short native toast (Android, not Discord's: that one can crash the app). */
+export async function nativeToast(text: string): Promise<void> {
+  await callNative("toast", [text], 3000);
+}
+
 /** Why the header button is shown or hidden (Diagnostics). */
 export async function nativeEncButtonStatus(): Promise<string> {
   const out = await callNative("encbuttonstatus", [], 3000);

@@ -313,7 +313,7 @@ internal object SettingsScreen {
         c.addView(mb, top(a, 6f))
 
         toggle(a, c, v, "inlineVideo", "Play videos in the chat (on their picture) instead of full screen")
-        toggle(a, c, v, "encButton", "Show an E2EE on/off button in the chat header, left of the search icon")
+        toggle(a, c, v, "encButton", "Show the \uD83D\uDD12 E2EE button in the chat header (left of the search icon, and left of the call icons in a DM). Tap it to switch encryption on or off for that chat: \uD83D\uDD12 E2EE = on, \uD83D\uDD12 OFF = off")
         toggle(a, c, v, "showLock", "Show a lock icon next to the time of decrypted messages")
         if (state.optBoolean("isDev", false)) toggle(a, c, v, "debug", "Debug logging")
         return c

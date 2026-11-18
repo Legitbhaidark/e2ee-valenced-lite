@@ -3,6 +3,7 @@
 package aegires.e2ee
 
 import android.content.Context
+import android.widget.Toast
 import android.net.Uri
 import android.os.Build
 import app.valenced.bridge.asDelegate
@@ -241,6 +242,21 @@ val aegiresNative = plugin {
             val args = rawArgs.asDelegate()
             val state: String by args.string()
             withAppActivity { EncryptButton.set(it, state) }
+            "ok"
+        }
+
+        // A short Android toast (Discord's own toast can crash the app, see js/notify.ts). Returns "ok".
+        registerNativeMethod("aegires.toast") { rawArgs ->
+            val args = rawArgs.asDelegate()
+            val text: String by args.string()
+            withAppActivity { act ->
+                act.runOnUiThread {
+                    try {
+                        Toast.makeText(act, text, Toast.LENGTH_LONG).show()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
             "ok"
         }
 

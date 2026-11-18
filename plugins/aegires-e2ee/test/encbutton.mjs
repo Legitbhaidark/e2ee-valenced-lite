@@ -19,6 +19,8 @@ const { bindHost, unbindHost } = await import("../js/host.ts");
 const { attachStorage, detachStorage, storage } = await import("../js/storage.ts");
 const { initStorage, setChannelEnabled, isEncryptionOn } = await import("../js/state.ts");
 const { wantedState, pressed, installEncButton } = await import("../js/patches/encButton.ts");
+const { announceUpdate, BUTTON_HINT } = await import("../js/announce.ts");
+const toasts = [];
 const { startNative, nativeReady } = await import("../js/engine/engine.ts");
 const { diag } = await import("../js/diag.ts");
 const ok = (m) => console.log("  ok  " + m);
@@ -36,6 +38,7 @@ const bridge = async (name, args) => {
     case "aegires.argon2engine": return "c:arm64-v8a";
     case "aegires.encbutton": sentStates.push(args[0]); return "ok";
     case "aegires.encbuttonstatus": return "shown";
+    case "aegires.toast": toasts.push(args[0]); return "ok";
     case "aegires.encbuttontaps": { const n = taps; taps = 0; return String(n); }
     case "valenced.fs.getConstants": return { cache: "/c" };
     default: return "";
@@ -101,6 +104,22 @@ if (nativeReady()) {
   ok("loop: sends the state, applies a press, stays quiet when nothing changes, hides with no chat and on stop");
 } else {
   assert.fail("native bridge stub not ready");
+}
+
+// update hint: once per plugin version, not when the button is switched off
+{
+  delete storage.seenVersion;
+  assert.equal(await announceUpdate(), true, "first start after install or update shows the hint");
+  assert.deepEqual(toasts, [BUTTON_HINT]);
+  assert.match(BUTTON_HINT, /switch encryption on or off/);
+  assert.equal(await announceUpdate(), false, "same version: no second hint");
+  storage.seenVersion = "0.0.1";
+  storage.encButton = false;
+  assert.equal(await announceUpdate(), false, "button switched off: no hint");
+  assert.equal(toasts.length, 1);
+  assert.notEqual(storage.seenVersion, "0.0.1", "the version is remembered even without a hint");
+  storage.encButton = true;
+  ok("update hint: once per version, skipped when the button is off");
 }
 
 await detachStorage();

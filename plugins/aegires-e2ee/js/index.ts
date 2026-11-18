@@ -17,6 +17,7 @@ import { startNative, stopNative } from "./engine/engine.ts";
 import { installVideoPlayer } from "./patches/player.ts";
 import { installHeaderLock } from "./patches/header.ts";
 import { installEncButton } from "./patches/encButton.ts";
+import { announceUpdate } from "./announce.ts";
 
 let undo: Array<() => void> = [];
 let timers: any[] = [];
@@ -64,7 +65,7 @@ export default plugin({
     safely("header lock", installHeaderLock);
     safely("encryption button", installEncButton);
     // Argon2id comes from the native half; checked here.
-    void startNative();
+    void startNative().then((ok) => (ok ? announceUpdate() : false)).catch(() => {});
     api.cleanup(unloadAll, stopNative, async () => {
       await detachStorage();
       unbindHost();
