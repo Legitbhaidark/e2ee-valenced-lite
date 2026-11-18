@@ -32,25 +32,8 @@ public final class NativeArgon2 {
     /** HKDF-SHA256 extract+expand, repeated `iterations` times on the same input; returns the last output. */
     private static native byte[] hkdfNative(byte[] salt, byte[] ikm, byte[] info, int len, int iterations);
 
-    /** True when the C library runs SHA-256 / HMAC / HKDF on the ARMv8 SHA-2 instructions in this process. */
-    private static native boolean sha256HwNative();
-
     public static boolean isReady() {
         return ready;
-    }
-
-    /**
-     * "hw" when the C HKDF uses the ARMv8 SHA-2 instructions (CPU has them and they matched the portable
-     * code at first use), "sw" for the portable C code, "java" when the C library is not in use. Never
-     * throws: an older library without the probe just reports "sw".
-     */
-    public static String sha256Engine() {
-        if (!ready) return "java";
-        try {
-            return sha256HwNative() ? "hw" : "sw";
-        } catch (Throwable t) {
-            return "sw";
-        }
     }
 
     /** "c:arm64-v8a" when the C library is in use, otherwise "java:<why not>". Shown in Diagnostics. */
