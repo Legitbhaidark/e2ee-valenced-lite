@@ -15,7 +15,7 @@ import android.widget.FrameLayout
 import java.lang.ref.WeakReference
 
 /**
- * The wallpaper behind Discord itself (Settings > Appearance), using the same picture as the settings
+ * The wallpaper behind the messages in Discord chats (Settings > Appearance), using the same picture as the settings
  * screen. Discord's screens are React Native views that paint their own opaque backgrounds, and those
  * views must not be touched, so the picture cannot go behind them. Instead one see-through layer is put
  * on the window, directly above Discord's content and below the E2EE button and players, and the
@@ -123,12 +123,24 @@ internal object AppWallpaper {
     }
 }
 
-/** The layer itself: draws the wallpaper (centre-cropped to the window) with the "screen" blend. Never takes a touch. */
+/**
+ * The layer itself: draws the wallpaper (centre-cropped to the window) with the "screen" blend, but only
+ * in the chat's message area, between the header and the message box. On every other screen (DM list,
+ * servers, settings) nothing is drawn. Never takes a touch.
+ */
 private class WallpaperLayer(private val act: Activity) : View(act) {
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val src = Rect()
     private val dst = RectF()
+    private val region = Rect()
     private var blur = false
+    private val ticker = object : Runnable {
+        override fun run() {
+            if (!isAttachedToWindow) return
+            track()
+            postDelayed(this, 400)
+        }
+    }
 
     init {
         paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
@@ -142,13 +154,47 @@ private class WallpaperLayer(private val act: Activity) : View(act) {
     fun update(newBlur: Boolean, alpha: Int) {
         blur = newBlur
         paint.alpha = alpha
+        track()
         invalidate()
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        post(ticker)
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(ticker)
+        super.onDetachedFromWindow()
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        track()
+    }
+
+    /** Where the chat's messages are right now: under the header's search icon, above the message box. Empty when this is not a chat. */
+    private fun track() {
+        val top = EncryptButton.headerBottom(act)
+        val bottom = ChatViewport.composerTop(act)
+        val next = Rect()
+        if (top >= 0 && bottom != Int.MAX_VALUE && bottom > top && width > 0) next.set(0, top, width, Math.min(bottom, height))
+        if (next != region) {
+            region.set(next)
+            invalidate()
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
+        if (region.isEmpty) return
         val bmp = Wallpaper.layerBitmap(act, blur) ?: return
+        // The picture is cropped for the whole window and only shown in the message area, so it stays
+        // still when the keyboard opens or the box grows.
         Wallpaper.cropFor(bmp, width, height, src)
         dst.set(0f, 0f, width.toFloat(), height.toFloat())
+        canvas.save()
+        canvas.clipRect(region)
         canvas.drawBitmap(bmp, src, dst, paint)
+        canvas.restore()
     }
 }

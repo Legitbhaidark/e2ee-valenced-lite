@@ -404,6 +404,16 @@ internal object EncryptButton {
      * The view the button goes left of: the leftmost search, call or video icon on the same row as the
      * search icon. A DM has call and video icons next to the search icon; a server channel only has search.
      */
+    /** Bottom edge (screen y) of the chat header: just under its search icon. -1 when no chat header is on screen. */
+    fun headerBottom(a: Activity): Int {
+        val decor = a.window.decorView as? ViewGroup ?: return -1
+        val icon = findSearchIcon(a, decor) ?: return -1
+        if (isCovered(icon, decor, a)) return -1
+        val loc = IntArray(2)
+        icon.getLocationOnScreen(loc)
+        return loc[1] + icon.height + dp(a, 10f)
+    }
+
     private fun findSearchIcon(a: Activity, decor: ViewGroup): View? {
         val screen = Rect(0, 0, a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels)
         val maxIcon = dp(a, MAX_ICON_DP.toFloat())

@@ -311,7 +311,7 @@ internal object SettingsScreen {
     private fun appearanceCard(a: Activity): View {
         val c = card(a, "Appearance")
         val v = state.optJSONObject("values") ?: JSONObject()
-        c.addView(label(a, "Wallpaper for this screen and, if you switch it on below, for Discord itself. With Soft glass on, the cards show it blurred behind them.", MUTED, 14f, false), top(a, 4f))
+        c.addView(label(a, "Wallpaper for this screen and, if you switch it on below, for the messages in your chats. With Soft glass on, the cards show it blurred behind them.", MUTED, 14f, false), top(a, 4f))
         val row = LinearLayout(a)
         row.orientation = LinearLayout.HORIZONTAL
         val choose = button(a, "Choose wallpaper", ACCENT)
@@ -336,7 +336,7 @@ internal object SettingsScreen {
             row.addView(rm, lp)
         }
         c.addView(row, top(a, 8f))
-        toggle(a, c, v, "appWallpaper", "Show the wallpaper behind Discord")
+        toggle(a, c, v, "appWallpaper", "Show the wallpaper behind the messages in chats")
         toggle(a, c, v, "wallpaperBlur", "Blur it (text is easier to read)")
         c.addView(label(a, "How strong it shows. Works best with a darker wallpaper.", MUTED, 14f, false), top(a, 10f))
         val levels = LinearLayout(a)
