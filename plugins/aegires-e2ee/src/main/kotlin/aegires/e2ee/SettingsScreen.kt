@@ -68,6 +68,7 @@ internal object SettingsScreen {
     private var chatSaveButton: Button? = null
     private var chatListBox: LinearLayout? = null
     private var themeView: TextView? = null
+    private var mediaView: TextView? = null
 
     private class PresetButton(val index: Int, val label: String, val max: Int, val button: Button)
 
@@ -131,6 +132,7 @@ internal object SettingsScreen {
                 refreshFormatCard()
                 refreshChatCard()
                 refreshThemeView()
+                refreshMediaView()
                 DevScreen.refresh()
             } catch (_: Throwable) {
             }
@@ -174,6 +176,7 @@ internal object SettingsScreen {
         col.addView(formatCard(a))
         builtinCard(a)?.let { col.addView(it) }
         col.addView(behaviourCard(a))
+        col.addView(mediaCard(a))
         col.addView(appearanceCard(a))
         col.addView(chatCard(a))
         if (state.optBoolean("isDev", false)) col.addView(toolsCard(a))
@@ -432,11 +435,38 @@ internal object SettingsScreen {
         themeView?.text = themeText()
     }
 
+    private fun refreshMediaView() {
+        mediaView?.text = state.optString("mediaNote", "")
+    }
+
+    /** Clearing the decrypted cache, and trying files that did not arrive (bad internet) again by hand. */
+    private fun mediaCard(a: Activity): View {
+        val c = card(a, "Media")
+        c.addView(label(a, "Decrypted pictures and videos are kept in a cache until Discord restarts. Clear it to free space (pictures come back with a tap). If the internet was bad and some files never decrypted, retry them here; that also happens by itself when Discord reconnects.", MUTED, 14f, false), top(a, 6f))
+        val retry = button(a, "Retry media now", INPUT)
+        retry.setOnClickListener {
+            events.add(JSONObject().put("t", "retryMedia").toString())
+            state.put("mediaNote", "Working...")
+            refreshMediaView()
+        }
+        c.addView(retry, top(a, 10f))
+        val clear = button(a, "Clear decrypted media cache", INPUT)
+        clear.setOnClickListener {
+            events.add(JSONObject().put("t", "clearCache").toString())
+            state.put("mediaNote", "Working...")
+            refreshMediaView()
+        }
+        c.addView(clear, top(a, 8f))
+        val note = label(a, state.optString("mediaNote", ""), TEXT, 14f, false)
+        mediaView = note
+        c.addView(note, top(a, 8f))
+        return c
+    }
+
     private fun behaviourCard(a: Activity): View {
         val c = card(a, "Behaviour")
         val v = state.optJSONObject("values") ?: JSONObject()
         toggle(a, c, v, "encryptByDefault", "Encrypt outgoing messages by default (in chats without their own on/off setting)")
-        toggle(a, c, v, "attachmentsExp", "Attachments: encrypt files you send in encrypted chats (up to 1 GiB), under random names. Received encrypted images, GIFs and videos are shown decrypted. When off, uploads are blocked in encrypted chats")
         toggle(a, c, v, "liquidGlass", "Liquid glass look for the media players and this screen (frosted, see-through panels; on Android 12+ this screen also blurs what is behind it). Applies to players you open next and to this screen the next time you open it")
         toggle(a, c, v, "softGlass", "Soft glass (needs Liquid glass): blurred wallpaper behind the settings cards and a stronger blur behind the screen")
         c.addView(label(a, "Heavier: soft glass uses more GPU and battery and may stutter on older phones.", WARN, 13f, false), top(a, 2f))
@@ -459,10 +489,9 @@ internal object SettingsScreen {
         })
         c.addView(mb, top(a, 6f))
 
-        toggle(a, c, v, "inlineVideo", "Play videos in the chat (on their picture) instead of full screen")
-        toggle(a, c, v, "encButton", "Show the \uD83D\uDD12 E2EE button in the chat header (left of the search icon, and left of the call icons in a DM). Tap it to switch encryption on or off for that chat: \uD83D\uDD12 E2EE = on, \uD83D\uDD12 OFF = off")
         toggle(a, c, v, "showLock", "Show a lock icon next to the time of decrypted messages")
         if (state.optBoolean("isDev", false)) toggle(a, c, v, "debug", "Debug logging")
+        c.addView(label(a, "Always on: encrypted attachments (images, GIFs, videos and files up to 1 GiB, under random names), videos and audio playing right in the chat, and the \uD83D\uDD12 E2EE button in a chat's header (left of the search icon, and left of the call icons in a DM). Tap that button to switch encryption on or off for the chat: \uD83D\uDD12 E2EE = on, \uD83D\uDD12 OFF = off.", MUTED, 14f, false), top(a, 10f))
         return c
     }
 

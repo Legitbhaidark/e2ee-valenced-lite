@@ -14,13 +14,14 @@ import { maxPlaintextBytes } from "./crypto/v2.ts";
 import { FORCED_CHANNELS } from "./forced.ts";
 import { clearLinkPreviews } from "./patches/embeds.ts";
 import { activateTheme, themeList, themeStatus, themesAvailable } from "./wallpaperTheme.ts";
+import { clearMediaCache, retryMedia } from "./patches/media.ts";
 import { BUILD_ID, DEVELOPER, DEV_BUILD, PLUGIN_VERSION } from "./about.ts";
 
 const POLL_MS = 300;
 
 /** The on/off settings the screen may change. "debug" exists in dev builds only. */
-export const TOGGLES: string[] = ["encryptByDefault", "attachmentsExp", "linkPreviews", "inlineVideo", "encButton", "showLock", "liquidGlass", "softGlass", "appWallpaper", "wallpaperBlur", "padme", ...(DEV_BUILD ? ["debug"] : [])];
-const DEFAULT_ON = new Set(["inlineVideo", "encButton", "padme"]); // a missing value means on
+export const TOGGLES: string[] = ["encryptByDefault", "linkPreviews", "showLock", "liquidGlass", "softGlass", "appWallpaper", "wallpaperBlur", "padme", ...(DEV_BUILD ? ["debug"] : [])];
+const DEFAULT_ON = new Set(["padme"]); // a missing value means on
 
 const toggleValue = (k: string): boolean => (DEFAULT_ON.has(k) ? storage[k] !== false : !!storage[k]);
 
@@ -107,6 +108,11 @@ export async function handleEvent(ev: any): Promise<void> {
     } else if (ev?.t === "theme" && typeof ev.id === "string") {
       const note = await activateTheme(ev.id);
       await nativeSettingsUpdate(JSON.stringify({ themeNote: note, themeStatus: await themeStatus() }));
+    } else if (ev?.t === "clearCache") {
+      await nativeSettingsUpdate(JSON.stringify({ mediaNote: await clearMediaCache() }));
+    } else if (ev?.t === "retryMedia") {
+      const n = retryMedia(true);
+      await nativeSettingsUpdate(JSON.stringify({ mediaNote: n > 0 ? `Retrying ${n} file${n === 1 ? "" : "s"}...` : "Nothing to retry: every file seen so far is decrypted." }));
     } else if (ev?.t === "wallpaper") {
       applyAppWallpaper(); // a new or removed picture: the layer and the Valenced theme both follow it
     } else if (ev?.t === "setPreset") {

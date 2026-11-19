@@ -291,7 +291,7 @@ internal class PlayerControls(
         if (onPip != null) {
             val pip = PlayerUi.pill(a, "⧉") {
                 pipPanel.visibility = View.GONE
-                onPip(false) // a tap: just the video
+                onPip(false) // a tap: the mini player, only the video floats
             }
             pip.setOnLongClickListener { // a hold: choose
                 speedPanel.visibility = View.GONE
@@ -311,8 +311,8 @@ internal class PlayerControls(
         pipPanel.setPadding(d(6f), d(6f), d(6f), d(6f))
         pipPanel.background = PlayerUi.rounded(d(14f).toFloat(), 0xE61E1F22.toInt())
         if (onPip != null) {
-            pipPanel.addView(PlayerUi.pill(a, "Video only", 0xFF2B2D31.toInt()) { pipPanel.visibility = View.GONE; onPip(false) })
-            val whole = PlayerUi.pill(a, "Whole app", 0xFF2B2D31.toInt()) { pipPanel.visibility = View.GONE; onPip(true) }
+            pipPanel.addView(PlayerUi.pill(a, "Mini player", 0xFF2B2D31.toInt()) { pipPanel.visibility = View.GONE; onPip(false) })
+            val whole = PlayerUi.pill(a, "Whole app (PiP)", 0xFF2B2D31.toInt()) { pipPanel.visibility = View.GONE; onPip(true) }
             pipPanel.addView(whole, LinearLayout.LayoutParams(wrap, wrap).also { it.topMargin = d(6f) })
         }
         val pipLp = FrameLayout.LayoutParams(wrap, wrap, Gravity.TOP or Gravity.START)

@@ -48,7 +48,10 @@ const ctxOfAtt = new Map<string, string>(); // attachment id -> message id
 const approved = new Set<string>(); // large files the user chose to decrypt
 let phSeq = 0;
 const drawingTap = new Set<string>(); // "Tap to decrypt" pictures being drawn right now
-const failed = new Set<string>(); // ids that did not decrypt (no retry until the plugin restarts)
+const failed = new Set<string>(); // ids that cannot decrypt (wrong key, damaged file): tried again only after "Retry media" or a new key
+const tries = new Map<string, number>(); // id -> failures that look like the network (offline, timeout, server error) so far
+const retryAt = new Map<string, number>(); // id -> when it may be tried again (after a network failure)
+const needTap = new Set<string>(); // ids whose decrypted copy was cleared: they come back as "Tap to decrypt"
 const queued = new Set<string>();
 const msgAtts = new Map<string, string[]>(); // message id -> its attachment ids (for tap events)
 const thumbs = new Map<string, PlayableMedia>(); // absolute path of a chat picture -> the media it stands for
@@ -261,10 +264,22 @@ function startDecrypt(ctx: MsgCtx, a: any, id: string, keys: Uint8Array[], delay
     try {
       done.set(id, await decryptOne(snapshot, id, keys, ctx.chan, ctx.author));
       diag.attDecrypted++;
+      needTap.delete(id);
+      tries.delete(id);
+      retryAt.delete(id);
     } catch (e) {
-      failed.add(id);
+      const msg = String((e as any)?.message ?? e);
+      if (PERMANENT.test(msg)) {
+        failed.add(id);
+      } else {
+        // Offline, a timeout or a server hiccup: not the file's fault, so try again later instead of giving up for good.
+        const n = (tries.get(id) ?? 0) + 1;
+        tries.set(id, n);
+        retryAt.set(id, Date.now() + (BACKOFF_MS[Math.min(n, BACKOFF_MS.length) - 1]));
+        if (n <= MAX_TRIES) scheduleRetry();
+      }
       diag.attFailed++;
-      diag.lastAttError = String((e as any)?.message ?? e).slice(0, 80);
+      diag.lastAttError = msg.slice(0, 80);
       log("decrypt failed", id, e);
     } finally {
       finished = true;
@@ -320,7 +335,8 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
       h = t.h;
       thumbs.set(thumbPath, { path: out, title, w, h });
     } catch (e) {
-      if (kind === "audio") throw e; // an audio file has no picture of its own to fall back to
+      // An audio file has no picture of its own to fall back to. (A local failure, not the network: not retried on its own.)
+      if (kind === "audio") throw new Error("cannot draw the audio card: " + String((e as any)?.message ?? e).slice(0, 60));
       log("no thumbnail for the video", id, e);
     }
   }
@@ -368,7 +384,7 @@ export function approveDecrypt(id: string): boolean {
 
 // ---------------------------------------------------------------- entry points
 export function handleAttachments(m: any, channelId: string | undefined, authorId: string | undefined, tags: Array<{ w: number; h: number }> = []): void {
-  if (!attachmentsEnabled(storage.attachmentsExp) || !nativeReady() || !Array.isArray(m.attachments)) return;
+  if (!attachmentsEnabled() || !nativeReady() || !Array.isArray(m.attachments)) return;
   const msgId = m.id != null ? String(m.id) : "";
   const chan = String(m.channel_id ?? channelId ?? "");
   if (msgId) msgAtts.set(msgId, m.attachments.map((a: any) => idOf(a)));
@@ -387,6 +403,10 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
       if (!ctx) {
         ctx = { id: msgId, chan, author: authorId, atts: m.attachments.map((x: any) => ({ ...x })) };
         ctxs.set(msgId, ctx);
+      } else if (typeof a.url === "string" && /^https?:/i.test(a.url)) {
+        // Discord's file links expire; a later sighting carries a fresh one, so a retry does not use the old.
+        const kept = ctx.atts.find((x: any) => idOf(x) === id);
+        if (kept) { kept.url = a.url; if (typeof a.proxy_url === "string") kept.proxy_url = a.proxy_url; }
       }
       ctxOfAtt.set(id, msgId);
     }
@@ -399,11 +419,12 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
     const t = tags[idx];
     if (t && t.w > 0 && t.h > 0) { a.width = t.w; a.height = t.h; }
     if (failed.has(id) || queued.has(id)) continue;
+    if ((retryAt.get(id) ?? 0) > Date.now()) continue; // a network failure: wait for its next try
     const keys = getReceiveKeysV2(channelId);
     if (!ctx || !keys.length) continue;
     diag.attSeen++;
     const size = Number(a.size) || 0;
-    if (size > limit && !approved.has(id)) {
+    if ((size > limit || needTap.has(id)) && !approved.has(id)) {
       // Too big to decrypt on its own: show "Tap to decrypt" and wait.
       if (drawingTap.has(id)) continue;
       drawingTap.add(id);
@@ -414,6 +435,113 @@ export function handleAttachments(m: any, channelId: string | undefined, authorI
     }
     startDecrypt(ctx, a, id, keys, SKELETON_DELAY_MS);
   }
+}
+
+// ---------------------------------------------------------------- network trouble, retry, cache
+/** Failures that are the file's own: a wrong key, a damaged or too big file. Everything else is treated as the network. */
+const PERMANENT = /decrypt failed|wrong key|corrupt|too large|not allowed|cannot draw/i;
+const BACKOFF_MS = [4000, 10000, 30000];
+const MAX_TRIES = 3;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Runs the attachments of the messages that own these ids through the normal path again. Returns how many messages. */
+function rescan(ids: Iterable<string>): number {
+  const msgIds = new Set<string>();
+  for (const id of ids) {
+    const mid = ctxOfAtt.get(id);
+    if (mid) msgIds.add(mid);
+  }
+  for (const mid of msgIds) {
+    const ctx = ctxs.get(mid);
+    if (!ctx) continue;
+    handleAttachments({ id: ctx.id, channel_id: ctx.chan, attachments: ctx.atts.map((x) => ({ ...x })) }, ctx.chan, ctx.author);
+  }
+  return msgIds.size;
+}
+
+/** After a network failure: tries the waiting files again when their time has come, up to three times each. */
+function scheduleRetry(): void {
+  if (retryTimer) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    const now = Date.now();
+    const due: string[] = [];
+    let waiting = false;
+    for (const [id, at] of retryAt) {
+      if ((tries.get(id) ?? 0) > MAX_TRIES || done.has(id) || queued.has(id)) continue;
+      if (at <= now) due.push(id);
+      else waiting = true;
+    }
+    if (due.length) rescan(due);
+    if (waiting) scheduleRetry();
+  }, 3000);
+}
+
+/**
+ * Tries the files that did not arrive again, now: all that failed on the network, and with all = true also the
+ * ones marked damaged. Returns how many files are being retried.
+ */
+export function retryMedia(all = false): number {
+  const ids = new Set<string>(tries.keys());
+  if (all) for (const id of failed) ids.add(id);
+  for (const id of [...ids]) if (done.has(id) || queued.has(id)) ids.delete(id);
+  if (all) failed.clear();
+  tries.clear();
+  retryAt.clear();
+  if (!ids.size) return 0;
+  rescan(ids);
+  return ids.size;
+}
+
+let lastNetwork = 0;
+
+/**
+ * Called for every Flux event: when Discord reconnects (or the app comes back to the front) the files that
+ * failed because of the network are tried again on their own.
+ */
+export function noteNetworkEvent(event: any): void {
+  const type = String(event?.type ?? "");
+  const back = type === "CONNECTION_OPEN" || type === "CONNECTION_RESUMED" || (type === "APP_STATE_UPDATE" && String(event?.state) === "active");
+  if (!back || !tries.size) return;
+  const now = Date.now();
+  if (now - lastNetwork < 3000) return; // one reconnect sends several events
+  lastNetwork = now;
+  setTimeout(() => { retryMedia(false); }, 1500); // let the connection settle first
+}
+
+const fmtBytes = (n: number): string =>
+  n >= 1 << 30 ? (n / (1 << 30)).toFixed(1) + " GB" : n >= 1 << 20 ? (n / (1 << 20)).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+
+/**
+ * Deletes the decrypted files now (the settings button). Pictures on screen go back to "Tap to decrypt" and
+ * decrypt again, one by one, when tapped. Returns a note for the settings screen.
+ */
+export async function clearMediaCache(): Promise<string> {
+  const files = done.size;
+  let bytes = 0;
+  for (const d of done.values()) bytes += d.size || 0;
+  jobs.length = 0;
+  for (const id of done.keys()) needTap.add(id);
+  done.clear();
+  ph.clear();
+  phPaths.clear();
+  thumbs.clear();
+  approved.clear();
+  drawingTap.clear();
+  failed.clear();
+  tries.clear();
+  retryAt.clear();
+  queued.clear();
+  purged = (async () => {
+    try {
+      await removePath(`${await cacheDir()}/aegires/in`);
+    } catch {
+      // nothing to delete, or the bridge is not up
+    }
+  })();
+  await purged;
+  rescan(needTap); // draws "Tap to decrypt" where the pictures were
+  return files ? `Cleared ${files} file${files === 1 ? "" : "s"} (${fmtBytes(bytes)}). Tap a picture to decrypt it again.` : "The cache is already empty.";
 }
 
 /** Forgets everything and deletes the decrypted files (plugin start and stop). */
@@ -427,6 +555,9 @@ export function clearMedia(): void {
   approved.clear();
   drawingTap.clear();
   failed.clear();
+  tries.clear();
+  retryAt.clear();
+  needTap.clear();
   queued.clear();
   msgAtts.clear();
   thumbs.clear();

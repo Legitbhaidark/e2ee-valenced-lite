@@ -57,6 +57,7 @@ internal object InlineVideo {
         runUi(activity) {
             try {
                 InlineAudio.close()
+                MiniPlayer.close()
                 close()
                 if (!VideoPlayer.allowed(filePath) || !File(filePath).isFile) {
                     status = "full screen: file not found"
@@ -273,7 +274,7 @@ internal object InlineVideo {
                 val pos = vv.currentPosition
                 val sp = controls?.speed ?: 1f
                 val ok = if (whole) PipPlayer.enterApp(a, targetW, targetH)
-                else PipPlayer.enter(a, filePath, pos, sp, targetW, targetH)
+                else MiniPlayer.show(a, filePath, fileTitle, pos, sp, targetW, targetH)
                 if (ok) close()
                 else android.widget.Toast.makeText(a, "Picture-in-picture is not available here", android.widget.Toast.LENGTH_SHORT).show()
             },

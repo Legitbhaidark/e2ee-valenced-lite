@@ -22,7 +22,7 @@ const REASSERT_MS = 1500; // the state is re-sent now and then (the overlay is d
 type BtnState = "on" | "off" | "locked" | "hide";
 
 export function wantedState(channelId: string): BtnState {
-  if (storage.encButton === false || !channelId) return "hide";
+  if (!channelId) return "hide";
   if (isForced(channelId)) return "locked";
   if (!canSend(channelId)) return "hide"; // no key for this chat: nothing to switch
   return isEncryptionOn(channelId) ? "on" : "off";
@@ -58,15 +58,13 @@ export function installEncButton(): () => void {
         return;
       }
       let channelId = selectedChannelId();
-      if (storage.encButton !== false) {
-        const taps = await nativeEncButtonTaps();
-        if (taps > 0) {
-          // An even number of presses cancels out; each press is one switch.
-          const msg = taps % 2 === 1 || isForced(channelId) ? pressed(channelId) : "";
-          if (msg) notify(msg);
-          channelId = selectedChannelId();
-          last = ""; // the native button flipped itself on the press: send the real state back even if unchanged
-        }
+      const taps = await nativeEncButtonTaps();
+      if (taps > 0) {
+        // An even number of presses cancels out; each press is one switch.
+        const msg = taps % 2 === 1 || isForced(channelId) ? pressed(channelId) : "";
+        if (msg) notify(msg);
+        channelId = selectedChannelId();
+        last = ""; // the native button flipped itself on the press: send the real state back even if unchanged
       }
       const want = wantedState(channelId);
       const now = Date.now();

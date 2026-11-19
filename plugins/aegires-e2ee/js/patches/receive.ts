@@ -20,7 +20,7 @@ import { noteSelfId } from "../self.ts";
 import { notify } from "../notify.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
 import { encryptAttachments } from "../outgoing.ts";
-import { clearMedia, handleAttachments } from "./media.ts";
+import { clearMedia, handleAttachments, noteNetworkEvent } from "./media.ts";
 import { clearLinkPreviews, handleLinkPreviews } from "./embeds.ts";
 import { diag } from "../diag.ts";
 
@@ -140,7 +140,7 @@ function interceptAttach(event: any, type: string): boolean {
   if (!/ADD/.test(type) || event[MARK]) return false;
   const channelId = String(event.channelId ?? event.channel_id ?? selectedChannelId() ?? "");
   if (!channelId || !isEncryptionOn(channelId)) return false;
-  if (!attachmentsEnabled(storage.attachmentsExp)) {
+  if (!attachmentsEnabled()) {
     notify(ATTACHMENTS_BLOCKED_MSG);
     return true;
   }
@@ -194,6 +194,7 @@ export function installReceivePatch(): () => void {
   clearLinkPreviews();
   const unpatch = hook((event: any) => {
     try {
+      noteNetworkEvent(event);
       if (handleEvent(event)) return undefined; // drop this event
     } catch (e) {
       // Never let a bug here break Discord's own event handling.

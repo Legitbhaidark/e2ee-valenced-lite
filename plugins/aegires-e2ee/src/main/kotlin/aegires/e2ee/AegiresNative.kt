@@ -330,6 +330,7 @@ val aegiresNative = plugin {
         VideoPlayer.close()
         InlineVideo.close()
         InlineAudio.close()
+        MiniPlayer.close()
         TouchSpy.shutdown()
         EncryptButton.shutdown()
         AppWallpaper.shutdown()

@@ -35,6 +35,7 @@ internal object VideoPlayer {
                     return@runOnUiThread
                 }
                 current?.dismiss()
+                MiniPlayer.close()
                 val dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
                 val root = FrameLayout(activity)
                 root.setBackgroundColor(Color.BLACK)
@@ -83,14 +84,14 @@ internal object VideoPlayer {
                 }
 
                 // Same controls as the in-chat player; picture-in-picture is for video only.
-                val pip: ((Boolean) -> Unit)? = if (isAudio(path) || !PipPlayer.supported(activity)) null else {
+                val pip: ((Boolean) -> Unit)? = if (isAudio(path)) null else {
                     { whole ->
                         val pos = video.currentPosition
                         val sp = controls?.speed ?: 1f
                         val m = mpRef
                         val w = m?.videoWidth ?: 0
                         val h = m?.videoHeight ?: 0
-                        val entered = if (whole) PipPlayer.enterApp(activity, w, h) else PipPlayer.enter(activity, path, pos, sp, w, h)
+                        val entered = if (whole) PipPlayer.enterApp(activity, w, h) else MiniPlayer.show(activity, path, title, pos, sp, w, h)
                         if (entered) dialog.dismiss()
                         else Toast.makeText(activity, "Picture-in-picture is not available here", Toast.LENGTH_SHORT).show()
                     }

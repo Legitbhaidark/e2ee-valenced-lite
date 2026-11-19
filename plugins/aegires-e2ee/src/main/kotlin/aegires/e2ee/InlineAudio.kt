@@ -48,6 +48,7 @@ internal object InlineAudio {
         InlineVideo.runUi(activity) {
             try {
                 InlineVideo.close()
+                MiniPlayer.close()
                 close()
                 if (!VideoPlayer.allowed(filePath) || !File(filePath).isFile) {
                     InlineVideo.note("audio: full screen: file not found")

@@ -99,8 +99,8 @@ function mediaForTap(ne: any): PlayableMedia | null {
 
 function play(m: PlayableMedia): boolean {
   if (!nativeReady()) { note("native module not ready - Discord's viewer used"); return false; }
-  // Videos play in the chat (on their own picture) unless that is switched off; audio always uses the full player.
-  const inline = storage.inlineVideo !== false;
+  // Videos and audio play in the chat (on their own picture); the native side falls back to full screen when it cannot find the picture.
+  const inline = true;
   nativePlayMedia(m.path, m.title, inline, m.w ?? 0, m.h ?? 0).then(
     () => {
       const file = m.path.slice(m.path.lastIndexOf("/") + 1);

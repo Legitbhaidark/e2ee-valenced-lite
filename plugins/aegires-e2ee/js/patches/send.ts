@@ -51,7 +51,7 @@ export function installSendPatch(): () => void {
           // Files were encrypted when they were attached (receive.ts). Anything that is not
           // provably encrypted (or the switch being off) stops the whole send.
           const names = files.map(uploadFileName);
-          if (!attachmentsEnabled(storage.attachmentsExp) || !names.every((n) => isEncryptedFileName(n))) {
+          if (!attachmentsEnabled() || !names.every((n) => isEncryptedFileName(n))) {
             diag.lastSend = `with ${files.length} attachment(s) -> BLOCKED (names: ${names.join(",").slice(0, 60) || "unreadable"})`;
             notify(ATTACHMENTS_BLOCKED_MSG);
             return Promise.resolve();

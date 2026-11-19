@@ -59,15 +59,11 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 // states
 assert.equal(wantedState(CH), "hide", "no key for this chat: no button");
 storage.keyV2 = "ab".repeat(32);
-assert.equal(storage.encButton, true, "on by default");
 assert.equal(wantedState(""), "hide");
 assert.equal(wantedState(CH), "off");
 setChannelEnabled(CH, true);
 assert.equal(wantedState(CH), "on");
-storage.encButton = false;
-assert.equal(wantedState(CH), "hide");
-storage.encButton = true;
-ok("states: hide without a chat or when switched off in settings, otherwise on / off");
+ok("states: hide without a chat or a key, otherwise on / off");
 
 // presses
 setChannelEnabled(CH, false);
@@ -115,12 +111,10 @@ if (nativeReady()) {
   assert.match(BUTTON_HINT, /switch encryption on or off/);
   assert.equal(await announceUpdate(), false, "same version: no second hint");
   storage.seenVersion = "0.0.1";
-  storage.encButton = false;
-  assert.equal(await announceUpdate(), false, "button switched off: no hint");
-  assert.equal(toasts.length, 1);
-  assert.notEqual(storage.seenVersion, "0.0.1", "the version is remembered even without a hint");
-  storage.encButton = true;
-  ok("update hint: once per version, skipped when the button is off");
+  assert.equal(await announceUpdate(), true, "a new version shows the hint again");
+  assert.equal(toasts.length, 2);
+  assert.notEqual(storage.seenVersion, "0.0.1", "the version is remembered");
+  ok("update hint: once per plugin version");
 }
 
 await detachStorage();
