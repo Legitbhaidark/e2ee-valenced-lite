@@ -4,6 +4,16 @@ Aegires E2EE for Valenced. Newest first. The release workflow uses the `## <vers
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.34 - stable
+- New in-chat player for video and audio: double-tap the left or right half of a video to jump 10 s (keep tapping to jump more), speed from 0.25x to 5x, a seek bar with the time, and picture-in-picture. The controls hide by themselves and the full-screen player uses the same ones. The players no longer draw over Discord's message box when you scroll.
+- Picture-in-picture: tap for "Video only", a small floating player you can drag anywhere (it settles against the nearest side) while you keep using Discord, or hold the button to choose "Whole app".
+- Optional liquid glass look (Settings > Behaviour, off by default): frosted, see-through panels with a bright edge on the players and the settings screen, with a real background blur on Android 12+. "Soft glass" (heavier) adds a blurred wallpaper behind the settings cards. "Glass controls" gives text boxes, buttons and switches the same look and keeps them readable on any wallpaper (text contrast at least 4.5:1, 7:1 in text boxes).
+- Wallpapers: pick a picture for the settings screen and show it behind your chats (Subtle / Medium / Strong, optional blur). With the Valenced Themes API plugin installed, the wallpaper becomes a real theme behind the whole app.
+- New Aegires color themes (needs the Valenced Themes API plugin): Midnight, AMOLED, Rose, Forest, Ocean, Sunset, Lavender, Graphite, and "Wallpaper + colors", which takes its colors from your picture. Choose one in the settings or in Valenced's Themes settings, then restart Discord.
+- New Media card in the settings: "Retry media now" and "Clear decrypted media cache". Files that could not be decrypted because of a bad connection are also retried by themselves when Discord reconnects.
+- Encrypted attachments, videos and audio in the chat, and the header E2EE button are always on now, so their switches are gone from the settings.
+- Clean-up: a stray patch file was removed from the repository.
+
 ## 0.1.34-dev11
 - The wallpaper is now a real Valenced theme when the Themes API plugin (`valenced.api.themes`, optional) is installed: choose Aegires > Wallpaper in Valenced's Themes settings and the picture becomes the background of the whole app, drawn through Discord's own theme pipeline (surfaces turn see-through) instead of a layer on top of the chat. Subtle / Medium / Strong set how much shows through, "Blur it" blurs the picture. Without the Themes API the chat-only layer from dev9 is still used.
 - Each picked wallpaper gets a new file name, so the picture always refreshes.
