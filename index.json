@@ -5,11 +5,10 @@
   "plugins": {
     "io.github.system32crowdstrikewin11.aegires-e2ee": {
       "name": "Aegires E2EE",
-      "description": "End-to-end encryption for Discord on Valenced, compatible with the Aegires Android app. Encrypts and decrypts text messages, images, GIFs, videos and files (up to 1 GiB) with a shared password, using Aegires v2 (Argon2id, AES-GCM). Per-chat on/off with /e2ee, a lock icon next to decrypted messages, a native video player, and a native module (C Argon2id with Kotlin/Java fallback) that makes key derivation much faster than plain JS.",
+      "description": "End-to-end encryption for Discord on Valenced, compatible with the Aegires Android app. Encrypts and decrypts text messages, images, GIFs, videos, audio and files (up to 1 GiB) with a shared password, using Aegires v2 (Argon2id, AES-GCM). An E2EE button in the chat header switches encryption per chat and decrypted messages get a lock icon. Videos and audio play right in the chat (speed, 10 s jumps, picture-in-picture), with an optional liquid glass look, wallpapers and Aegires color themes. A native module (C Argon2id with Kotlin/Java fallback) makes key derivation much faster than plain JS.",
       "author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
       "channels": {
-        "latest": "0.1.33",
-        "beta": "0.1.34-dev14",
+        "latest": "0.1.34",
         "lts": "0.1.27"
       },
       "versions": {
@@ -1027,6 +1026,23 @@
             },
             "discord": {
               "version": "*"
+            }
+          }
+        },
+        "0.1.34": {
+          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34.zip",
+          "sha256": "bd17900f888e639577a5d4e440298a02fa1f2cede87c9a970bead9a93fe06644",
+          "size": 224167,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            },
+            "valenced.api.themes": {
+              "version": ">=1 <2",
+              "optional": true
             }
           }
         },
