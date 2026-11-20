@@ -4,7 +4,7 @@
 	"name": "E2EE Lite",
 	"description": "Lightweight end-to-end encryption for Discord on Valenced, compatible with the Aegires Android app (Aegires v2: Argon2id, AES-GCM). Encrypts and decrypts text, images, GIFs, videos, audio and files with a shared password. Settings: set the encryption key and pick the encryption preset. An E2EE button in the chat header switches encryption per chat, decrypted messages get a lock icon, and videos and audio play in the chat.",
 	"author": "Legitbhaidark (https://github.com/Legitbhaidark \"GitHub\"), based on Aegires E2EE by Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

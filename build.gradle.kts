@@ -236,7 +236,6 @@ configure(subprojects.filter { project -> pluginRoots.any { project.path.startsW
                 "arm64-v8a" to "aarch64-linux-android",
                 "armeabi-v7a" to "armv7a-linux-androideabi",
                 "x86_64" to "x86_64-linux-android",
-                "x86" to "i686-linux-android",
             )
             for ((abi, triple) in targets) {
                 val clang = File(bin, "$triple$api-clang")

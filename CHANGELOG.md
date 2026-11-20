@@ -4,6 +4,9 @@ E2EE Lite for Valenced. Newest first. The release workflow uses the `## <version
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.1 - stable
+- Smaller package: the 32-bit x86 native library is no longer built (no phone uses it). arm64-v8a, armeabi-v7a and x86_64 stay; a device without a matching library uses the Java fallback.
+
 ## 0.1.0 - stable
 First release of E2EE Lite, a trimmed-down build of Aegires E2EE for Valenced, compatible with the Aegires Android app (Aegires v2: Argon2id, AES-GCM).
 - Encrypts and decrypts text, images, GIFs, videos, audio and files with a shared password.

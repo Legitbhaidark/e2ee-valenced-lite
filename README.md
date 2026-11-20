@@ -3,6 +3,9 @@
 A small, stable end-to-end encryption plugin for Discord on [Valenced](https://github.com/Valenced), compatible with the
 Aegires Android app (Aegires v2: Argon2id, HKDF, AES-GCM). It is a trimmed build of Aegires E2EE.
 
+**Install**
+In Valenced, add the repository `https://legitbhaidark.github.io/e2ee-valenced-lite/index.json`, then install **E2EE Lite** from it. (Do not use GitHub's "Download ZIP" of this repository: that is the source code, not a plugin package.)
+
 **What it does**
 - Encrypts and decrypts text messages, images, GIFs, videos, audio and files with a shared password.
 - An **E2EE** button in the chat header switches encryption on or off for that chat; decrypted messages get a lock icon.
