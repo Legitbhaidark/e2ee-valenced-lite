@@ -1,19 +1,41 @@
 {
   "format": 1,
-  "name": "Dark's Plugins",
-  "description": "Aegires E2EE for Valenced",
+  "name": "Legitbhaidark's Plugins",
+  "description": "E2EE Lite for Valenced",
   "plugins": {
+    "io.github.legitbhaidark.e2ee-lite": {
+      "name": "E2EE Lite",
+      "description": "Lightweight end-to-end encryption for Discord on Valenced, compatible with the Aegires Android app (Aegires v2: Argon2id, AES-GCM). Encrypts and decrypts text, images, GIFs, videos, audio and files with a shared password. Settings: set the encryption key and pick the encryption preset. An E2EE button in the chat header switches encryption per chat, decrypted messages get a lock icon, and videos and audio play in the chat.",
+      "author": "Legitbhaidark (https://github.com/Legitbhaidark \"GitHub\"), based on Aegires E2EE by Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
+      "channels": {
+        "latest": "0.1.0"
+      },
+      "versions": {
+        "0.1.0": {
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.legitbhaidark.e2ee-lite@0.1.0.zip",
+          "sha256": "a47f701d501099a997e1c93fc5965cfc48ccd5e42246a5d93759765f1c43d0c6",
+          "size": 166026,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    },
     "io.github.system32crowdstrikewin11.aegires-e2ee": {
       "name": "Aegires E2EE",
       "description": "End-to-end encryption for Discord on Valenced, compatible with the Aegires Android app. Encrypts and decrypts text messages, images, GIFs, videos, audio and files (up to 1 GiB) with a shared password, using Aegires v2 (Argon2id, AES-GCM). An E2EE button in the chat header switches encryption per chat and decrypted messages get a lock icon. Videos and audio play right in the chat (speed, 10 s jumps, picture-in-picture), with an optional liquid glass look, wallpapers and Aegires color themes. A native module (C Argon2id with Kotlin/Java fallback) makes key derivation much faster than plain JS.",
       "author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
       "channels": {
-        "latest": "0.1.34",
-        "lts": "0.1.27"
+        "latest": "0.1.34"
       },
       "versions": {
         "0.1.0": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.0.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.0.zip",
           "sha256": "89a97d03dd086a6b432aef53506655dc2fe120dc4ed14bad3daeaef95ff185d6",
           "size": 32613,
           "dependencies": {
@@ -26,7 +48,7 @@
           }
         },
         "0.1.1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.1.zip",
           "sha256": "64ee754b233de4027ca4593ea07a26317d882322c88a8e44f2766fe54231be14",
           "size": 38863,
           "dependencies": {
@@ -39,7 +61,7 @@
           }
         },
         "0.1.10": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.10.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.10.zip",
           "sha256": "165322440a9f7d3707f7f56976d8b0ac8d4e729e43f4606c993d4e8c9e876986",
           "size": 55901,
           "dependencies": {
@@ -52,7 +74,7 @@
           }
         },
         "0.1.11": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.11.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.11.zip",
           "sha256": "88f7d5610986f98f9449157212b144779a2227f4db70aab15be7e3452d1de58e",
           "size": 59014,
           "dependencies": {
@@ -65,7 +87,7 @@
           }
         },
         "0.1.12": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.12.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.12.zip",
           "sha256": "e216e77c2b7db5d6467932c9767172288b9eb7cfe88798f8f61d4b01fe3143b9",
           "size": 60105,
           "dependencies": {
@@ -78,7 +100,7 @@
           }
         },
         "0.1.13": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.13.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.13.zip",
           "sha256": "dd6755912d598dc36fa575aef0ccbc71f6199c384b64f5b17126f74ec5acfe11",
           "size": 60142,
           "dependencies": {
@@ -91,7 +113,7 @@
           }
         },
         "0.1.14": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.14.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.14.zip",
           "sha256": "9f5eef00de87e5a0e787f67c7a8e5a77abba143116b4327c7be50252656c66d8",
           "size": 64446,
           "dependencies": {
@@ -104,7 +126,7 @@
           }
         },
         "0.1.15": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.15.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.15.zip",
           "sha256": "cbd3fd7a72228a423a4147de4471588fe33702847fc4646e9f0e8d248c7e2c96",
           "size": 64973,
           "dependencies": {
@@ -117,7 +139,7 @@
           }
         },
         "0.1.16": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.16.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.16.zip",
           "sha256": "aa2072b9cd4181a37028b9f1750ecdf85f381df622ec8c4489ad00b6ca0b7931",
           "size": 66397,
           "dependencies": {
@@ -130,7 +152,7 @@
           }
         },
         "0.1.17": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.17.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.17.zip",
           "sha256": "e04641230947a965d5e7311d0ad15599abab9a017c03c9f9d4f3cf2f1b643b92",
           "size": 66893,
           "dependencies": {
@@ -143,7 +165,7 @@
           }
         },
         "0.1.18": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.18.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.18.zip",
           "sha256": "73d14a8b8ce9131aa6df80bf139a7c20ff7dbd2b741f6d67868a3957e79ce7c9",
           "size": 67334,
           "dependencies": {
@@ -156,7 +178,7 @@
           }
         },
         "0.1.19": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.19.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.19.zip",
           "sha256": "e83ce1d52e8cf1695dc06922f200ba13c60f4e90d0bab4fc4d7a50cf077e3cfd",
           "size": 67704,
           "dependencies": {
@@ -169,7 +191,7 @@
           }
         },
         "0.1.2": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.2.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.2.zip",
           "sha256": "3cbfc449688752a4ca80d9ddd336358c089525c665ec03e5f99e89b0e2114bf0",
           "size": 38939,
           "dependencies": {
@@ -182,7 +204,7 @@
           }
         },
         "0.1.20": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.20.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.20.zip",
           "sha256": "a58de7ebe742962af153f65f8bb475ebbcd49a18d4afb5dfc611ba1eb5ba4cce",
           "size": 68045,
           "dependencies": {
@@ -195,7 +217,7 @@
           }
         },
         "0.1.21": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.21.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.21.zip",
           "sha256": "6fbdf93dc4d61c6c9457174ef109caa3e050d322bb43b2370922af399a8fd2fa",
           "size": 97310,
           "dependencies": {
@@ -208,7 +230,7 @@
           }
         },
         "0.1.22": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.22.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.22.zip",
           "sha256": "55094a3c37fefe8816ef9e985a5fa8c354f2237a4bb9fbd45c60c1ccd0e27e5b",
           "size": 100798,
           "dependencies": {
@@ -221,7 +243,7 @@
           }
         },
         "0.1.23": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.23.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.23.zip",
           "sha256": "05afa2c367861e45087a045b8644f15fa8a154bf8313187876880392a9f4fe7e",
           "size": 100912,
           "dependencies": {
@@ -234,7 +256,7 @@
           }
         },
         "0.1.24": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.24.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.24.zip",
           "sha256": "ce05441601448aac62f48097e5403af616594f3db732732a0dfbdc8a1bcc145a",
           "size": 100997,
           "dependencies": {
@@ -247,7 +269,7 @@
           }
         },
         "0.1.25": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.25.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.25.zip",
           "sha256": "b0572e1d20b1963738a69a39410ab66f0972166503384fb749f1edf43b3c905f",
           "size": 100974,
           "dependencies": {
@@ -260,7 +282,7 @@
           }
         },
         "0.1.26": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.26.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.26.zip",
           "sha256": "1a82adfe6974a11fe7ce4d38cfb6d14840dd942d348941c77b1a1601f7ec0329",
           "size": 111832,
           "dependencies": {
@@ -273,7 +295,7 @@
           }
         },
         "0.1.27": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.27.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.27.zip",
           "sha256": "e59080aabd67ea88f4966758544e5a896dece5f3a7f7fa29f5fba62abc33daf9",
           "size": 112712,
           "dependencies": {
@@ -286,7 +308,7 @@
           }
         },
         "0.1.28-dev1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.28-dev1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.28-dev1.zip",
           "sha256": "e2a0585f14fbcd183a62e239b05eb36c9c7295c69275a43cde2da009441c03c7",
           "size": 134208,
           "dependencies": {
@@ -299,7 +321,7 @@
           }
         },
         "0.1.28": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.28.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.28.zip",
           "sha256": "f0ccec502e7cba67187669f5d4b99d3ce05b6772353f5e33d03a56dde48d8871",
           "size": 105315,
           "dependencies": {
@@ -312,7 +334,7 @@
           }
         },
         "0.1.29-dev1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev1.zip",
           "sha256": "530bdddec745bda9583aef487b1face6e5449206fe3867c4fe014db333ea9ee4",
           "size": 134207,
           "dependencies": {
@@ -325,7 +347,7 @@
           }
         },
         "0.1.29-dev10": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev10.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev10.zip",
           "sha256": "65b6fb3d8d17672d6ed516e2f77ec1a6116a2d5f067565ab02f5642255ed69d5",
           "size": 159653,
           "dependencies": {
@@ -338,7 +360,7 @@
           }
         },
         "0.1.29-dev2": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev2.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev2.zip",
           "sha256": "675842a42c5f8f399f60d813a7f1b9a20ae82b0c511ab87d0f70402985a6fa3d",
           "size": 147140,
           "dependencies": {
@@ -351,7 +373,7 @@
           }
         },
         "0.1.29-dev3": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev3.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev3.zip",
           "sha256": "dda528fc4d7b4e3320daac4c9e8831adbcdbb7c397d686e72d50b337689182fc",
           "size": 152462,
           "dependencies": {
@@ -364,7 +386,7 @@
           }
         },
         "0.1.29-dev4": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev4.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev4.zip",
           "sha256": "c1d7419727c5854a79bee4974866e09ae46ed0513994d0d889b95a2164cb443a",
           "size": 152519,
           "dependencies": {
@@ -377,7 +399,7 @@
           }
         },
         "0.1.29-dev5": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev5.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev5.zip",
           "sha256": "138768e450988157a52645abb7a6d1086da7213093ef3f8bb50acfe36a77c6d7",
           "size": 152731,
           "dependencies": {
@@ -390,7 +412,7 @@
           }
         },
         "0.1.29-dev6": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev6.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev6.zip",
           "sha256": "420404e1974295f8ada799d8ac798bc4bbfecfad6a6c1f6362eb8147081cef3c",
           "size": 153050,
           "dependencies": {
@@ -403,7 +425,7 @@
           }
         },
         "0.1.29-dev7": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev7.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev7.zip",
           "sha256": "a9f519f94d1f91f75d3442631108acb00c2e84abf9869b046d06a3472c4ea1fc",
           "size": 153299,
           "dependencies": {
@@ -416,7 +438,7 @@
           }
         },
         "0.1.29-dev8": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev8.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev8.zip",
           "sha256": "21ce8788b543705b012913f113b06372c480b38849c9f3390b407e064b66f29c",
           "size": 158261,
           "dependencies": {
@@ -429,7 +451,7 @@
           }
         },
         "0.1.29-dev9": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev9.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29-dev9.zip",
           "sha256": "79c24ea799b062ac7acee20f7d1be0d582915cfd9be4f20f42d1d11908dff3cf",
           "size": 160243,
           "dependencies": {
@@ -442,7 +464,7 @@
           }
         },
         "0.1.29": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.29.zip",
           "sha256": "15c61942eb22f1733973ad05b6d752bd5cdc5fbd67c56b83d56fa8393ab3d510",
           "size": 128324,
           "dependencies": {
@@ -455,7 +477,7 @@
           }
         },
         "0.1.3": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.3.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.3.zip",
           "sha256": "8b7925fb5342f449d272162b628525dd20a66f3644fe91ef0bdb775de039722f",
           "size": 39560,
           "dependencies": {
@@ -468,7 +490,7 @@
           }
         },
         "0.1.30-dev1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev1.zip",
           "sha256": "234284d1d212dc2e86a0971c5f32e2b2bd35558c5ad3dd74d0b3576b9ea14b15",
           "size": 159649,
           "dependencies": {
@@ -481,7 +503,7 @@
           }
         },
         "0.1.30-dev10": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev10.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev10.zip",
           "sha256": "1aa43f83329c46f13344d74c4c5bf79f5e7dc865113937ed6221bf174bea9db4",
           "size": 180526,
           "dependencies": {
@@ -494,7 +516,7 @@
           }
         },
         "0.1.30-dev12": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev12.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev12.zip",
           "sha256": "4e9af9ac37a2255ae663f8dbea106d8b9968f7a49671dab637a9b94bc54dbcc2",
           "size": 187393,
           "dependencies": {
@@ -507,7 +529,7 @@
           }
         },
         "0.1.30-dev13": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev13.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev13.zip",
           "sha256": "aac536074143b7a4224dc2d1f7678f2e0674a6b81c968e47667531ad05039e8c",
           "size": 189415,
           "dependencies": {
@@ -520,7 +542,7 @@
           }
         },
         "0.1.30-dev14": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev14.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev14.zip",
           "sha256": "329adbfb6bbf875db54f3545ca260e267ea358ebfed60c42aca2acce576887a1",
           "size": 192456,
           "dependencies": {
@@ -533,7 +555,7 @@
           }
         },
         "0.1.30-dev15": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev15.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev15.zip",
           "sha256": "2dc83ac969bd78e27370b6280310ad442c55dd6e61d64659456eb3b6cb6e7ef2",
           "size": 198643,
           "dependencies": {
@@ -546,7 +568,7 @@
           }
         },
         "0.1.30-dev16": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev16.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev16.zip",
           "sha256": "c8795dee83c487304aefdbf1e365628c23f032f9d4575f4d91d6679318988763",
           "size": 193122,
           "dependencies": {
@@ -559,7 +581,7 @@
           }
         },
         "0.1.30-dev17": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev17.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev17.zip",
           "sha256": "7f0ccf8beda6b63db2397b92f3ab2fc1c325778ffe49cea120477ee1088a2012",
           "size": 193823,
           "dependencies": {
@@ -572,7 +594,7 @@
           }
         },
         "0.1.30-dev18": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev18.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev18.zip",
           "sha256": "11bb59c5d8fed3fd49c7b84af80e10beb0a7acac8d20f04229ded574de6f22e4",
           "size": 194616,
           "dependencies": {
@@ -585,7 +607,7 @@
           }
         },
         "0.1.30-dev19": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev19.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev19.zip",
           "sha256": "2536b182403325a99c79fb6e5203d9e818793af74f891778cebf60f96103b8f3",
           "size": 197086,
           "dependencies": {
@@ -598,7 +620,7 @@
           }
         },
         "0.1.30-dev2": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev2.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev2.zip",
           "sha256": "93865596d218d005c53b2e244ef7597f549f78b53af7588d2e6120e873924635",
           "size": 161167,
           "dependencies": {
@@ -611,7 +633,7 @@
           }
         },
         "0.1.30-dev3": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev3.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev3.zip",
           "sha256": "6e4b1638ec5a7dade20a029c845f68384894c6a01a3de010b605476e43615080",
           "size": 169151,
           "dependencies": {
@@ -624,7 +646,7 @@
           }
         },
         "0.1.30-dev4": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev4.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev4.zip",
           "sha256": "15a473be6bcef168df88df6a60c1d53bd94b51cfe7a6ac2f8e6bdf3c9bedd611",
           "size": 172239,
           "dependencies": {
@@ -637,7 +659,7 @@
           }
         },
         "0.1.30-dev5": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev5.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev5.zip",
           "sha256": "2f061c718486251a2aace6ed5a5bbe233eb5b2c22feb571ae6f7ad49bf4e1e15",
           "size": 173177,
           "dependencies": {
@@ -650,7 +672,7 @@
           }
         },
         "0.1.30-dev6": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev6.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev6.zip",
           "sha256": "79818d9d9a3f703e3e45c0c3816c13a3cd58d4d0210ae5d23d4c5ddd94ef132f",
           "size": 173698,
           "dependencies": {
@@ -663,7 +685,7 @@
           }
         },
         "0.1.30-dev7": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev7.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev7.zip",
           "sha256": "586cd01f564012187dac4b9f8f2fd68e017220297c8ba5bb2ce5f5ab64ca70d0",
           "size": 179190,
           "dependencies": {
@@ -676,7 +698,7 @@
           }
         },
         "0.1.30-dev8": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev8.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev8.zip",
           "sha256": "d4e7f92a088a3d5f6b4d736baf6fd857ad6ce43c83563089a209c54ff70eec7b",
           "size": 186010,
           "dependencies": {
@@ -689,7 +711,7 @@
           }
         },
         "0.1.30-dev9": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev9.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30-dev9.zip",
           "sha256": "3dd7417e8e3f235e403470dcee7051a6dff163711dfc070146327a8edcb0c575",
           "size": 179197,
           "dependencies": {
@@ -702,7 +724,7 @@
           }
         },
         "0.1.30": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.30.zip",
           "sha256": "1e3b4ff830abb97c9edf6ab78dddf693bd8fc3c0f5397467799a0300daffe4f1",
           "size": 169113,
           "dependencies": {
@@ -715,7 +737,7 @@
           }
         },
         "0.1.31-dev1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31-dev1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31-dev1.zip",
           "sha256": "fbbc2bdeed1cf7c03d4d79380cf91f0b152746909dd5646910a846f51fbefb3a",
           "size": 197081,
           "dependencies": {
@@ -728,7 +750,7 @@
           }
         },
         "0.1.31-dev2": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31-dev2.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31-dev2.zip",
           "sha256": "a3e232cac2fb05a257b9805b1153cef0829728cb335c5fdcc0307b18afe3f312",
           "size": 187956,
           "dependencies": {
@@ -741,7 +763,7 @@
           }
         },
         "0.1.31-dev3": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31-dev3.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31-dev3.zip",
           "sha256": "a88ea8609790f5951da7d3329258a8176a53c5115cfc6fcbe9de47a35b4628f4",
           "size": 187956,
           "dependencies": {
@@ -754,7 +776,7 @@
           }
         },
         "0.1.31": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.31.zip",
           "sha256": "d654495dc4d5cf952c26ed58a3401c79f3e61dc2643428b78ce71529840c363c",
           "size": 163489,
           "dependencies": {
@@ -767,7 +789,7 @@
           }
         },
         "0.1.32-dev1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.32-dev1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.32-dev1.zip",
           "sha256": "d3494135685a5a199787d62111dd4318f2a49de64ea161e4f716b5f825362471",
           "size": 187955,
           "dependencies": {
@@ -780,7 +802,7 @@
           }
         },
         "0.1.32-dev2": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.32-dev2.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.32-dev2.zip",
           "sha256": "77f0ae0a7236d70dc6073f5d1af689b3ed324ce59f6689e34464f620d33bc1c7",
           "size": 201327,
           "dependencies": {
@@ -793,7 +815,7 @@
           }
         },
         "0.1.32": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.32.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.32.zip",
           "sha256": "abbbfb7e57a7fcc14b39920518fd418ace5be55a9932f270bac8f81bf632ba0c",
           "size": 176860,
           "dependencies": {
@@ -806,7 +828,7 @@
           }
         },
         "0.1.33-dev1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33-dev1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33-dev1.zip",
           "sha256": "c8007a5e750369c4415ff1dc5bf66833265599ec51143484a69aec4a143353d9",
           "size": 203636,
           "dependencies": {
@@ -819,7 +841,7 @@
           }
         },
         "0.1.33-dev2": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33-dev2.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33-dev2.zip",
           "sha256": "cfd8602094e710283dbd8c50284d3fa79345806b61a1b10d9b429533d3241c76",
           "size": 204327,
           "dependencies": {
@@ -832,7 +854,7 @@
           }
         },
         "0.1.33-dev3": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33-dev3.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33-dev3.zip",
           "sha256": "d3ce747e24182630c75c428d1bc41f9ce4cf7e33acd51934baf02f4468ac6a43",
           "size": 204419,
           "dependencies": {
@@ -845,7 +867,7 @@
           }
         },
         "0.1.33": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.33.zip",
           "sha256": "59023883594148379ed97746194e593f54f7d15556e36cb5f2418a1c3271e069",
           "size": 179800,
           "dependencies": {
@@ -858,7 +880,7 @@
           }
         },
         "0.1.34-dev1": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev1.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev1.zip",
           "sha256": "89c3d1a7ab976ab483ca3fb657bc9ff0a03e7cb447cf826617ff22525a4f48ad",
           "size": 205776,
           "dependencies": {
@@ -871,7 +893,7 @@
           }
         },
         "0.1.34-dev10": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev10.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev10.zip",
           "sha256": "dc723db90fc2101c8678d2d1b42172854a58ecab7276fc3971ec81357e026d86",
           "size": 234726,
           "dependencies": {
@@ -884,7 +906,7 @@
           }
         },
         "0.1.34-dev11": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev11.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev11.zip",
           "sha256": "c620163e2a239f0e7feb5116cff15e299b8091c458001812991eac9d6f86b95f",
           "size": 236751,
           "dependencies": {
@@ -901,7 +923,7 @@
           }
         },
         "0.1.34-dev12": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev12.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev12.zip",
           "sha256": "eec226bcf4e73b2d0c887ab0062551e4a72c6c26c5b3f01a46670fdfa2131b27",
           "size": 242440,
           "dependencies": {
@@ -918,7 +940,7 @@
           }
         },
         "0.1.34-dev13": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev13.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev13.zip",
           "sha256": "e9feacb41b661ae62a5d165ac83c15f11ac061edbe656bd1fee04c78ebe0aae0",
           "size": 245934,
           "dependencies": {
@@ -935,7 +957,7 @@
           }
         },
         "0.1.34-dev14": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev14.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev14.zip",
           "sha256": "d6cf4379d8aab63795cefb6d62220315a59f4610d4983d1a2f9d2e7ca2dc974b",
           "size": 251277,
           "dependencies": {
@@ -952,7 +974,7 @@
           }
         },
         "0.1.34-dev2": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev2.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev2.zip",
           "sha256": "333038de048e1430ca85da3043b7a43b743ddc784401f2e624434956d21f4038",
           "size": 214167,
           "dependencies": {
@@ -965,7 +987,7 @@
           }
         },
         "0.1.34-dev3": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev3.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev3.zip",
           "sha256": "93ac30df86db645ed2151879333761ed4283180310a30a7139b9212551b8a63b",
           "size": 217630,
           "dependencies": {
@@ -978,7 +1000,7 @@
           }
         },
         "0.1.34-dev5": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev5.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev5.zip",
           "sha256": "3a7b103da8d322119c19e3ea4029978c59e56517631d03beeee56075250acabe",
           "size": 219491,
           "dependencies": {
@@ -991,7 +1013,7 @@
           }
         },
         "0.1.34-dev6": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev6.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev6.zip",
           "sha256": "6f332d1e7bd194995ad636aa4f4d745940f206143b253437edb0e654d6dacb0a",
           "size": 225968,
           "dependencies": {
@@ -1004,7 +1026,7 @@
           }
         },
         "0.1.34-dev8": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev8.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev8.zip",
           "sha256": "9bf373c9721015b6417ccbd1b015541febd8fe61b40bb1fd9304cf4a39cd86a1",
           "size": 233241,
           "dependencies": {
@@ -1017,7 +1039,7 @@
           }
         },
         "0.1.34-dev9": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev9.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34-dev9.zip",
           "sha256": "9719e815142b480ac7ef2909338a5d29ea1e3724a8f0c09485ed256f17e9b832",
           "size": 234050,
           "dependencies": {
@@ -1030,7 +1052,7 @@
           }
         },
         "0.1.34": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.34.zip",
           "sha256": "bd17900f888e639577a5d4e440298a02fa1f2cede87c9a970bead9a93fe06644",
           "size": 224167,
           "dependencies": {
@@ -1047,7 +1069,7 @@
           }
         },
         "0.1.4": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.4.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.4.zip",
           "sha256": "26088012420cb78b14c37ae61369a55f273268deb6f93e76fc9c902c83735e1c",
           "size": 39242,
           "dependencies": {
@@ -1060,7 +1082,7 @@
           }
         },
         "0.1.5": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.5.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.5.zip",
           "sha256": "30e15ada87d323fea41191a494d45ba26faff5ad7977bbba213b07f951e3a30d",
           "size": 39250,
           "dependencies": {
@@ -1073,7 +1095,7 @@
           }
         },
         "0.1.6": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.6.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.6.zip",
           "sha256": "e28a8fa7ee9e08c81b2c7428daa303ae275b85e385980c7af49ea4f01116c24d",
           "size": 47977,
           "dependencies": {
@@ -1086,7 +1108,7 @@
           }
         },
         "0.1.7": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.7.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.7.zip",
           "sha256": "71ae5a973d11229d8823180384a524b1e6a4972e8e24e490d1625848a99062fa",
           "size": 50746,
           "dependencies": {
@@ -1099,7 +1121,7 @@
           }
         },
         "0.1.8": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.8.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.8.zip",
           "sha256": "8f13eb6fedcafbe931c9869fe0c1213781a3086714df42a407fdafe089c1dbb4",
           "size": 52109,
           "dependencies": {
@@ -1112,7 +1134,7 @@
           }
         },
         "0.1.9": {
-          "url": "https://system32crowdstrikewin11.github.io/aegires-e2ee-valenced/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.9.zip",
+          "url": "https://legitbhaidark.github.io/e2ee-valenced-lite/pool/io.github.system32crowdstrikewin11.aegires-e2ee@0.1.9.zip",
           "sha256": "48bb76eb99e0d9b2a33681acf7d473404c6420cc6a1f94bd5aefd1179599cb2f",
           "size": 55897,
           "dependencies": {
