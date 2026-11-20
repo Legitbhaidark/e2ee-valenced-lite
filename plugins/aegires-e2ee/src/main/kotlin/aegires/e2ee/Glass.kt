@@ -29,6 +29,9 @@ internal object Glass {
     /** Soft glass: the heavier mode (blurred wallpaper behind the settings cards, stronger blur behind the screen). Only counts while [on]. */
     @Volatile var soft = false
 
+    /** Glass controls: glass text boxes, buttons and switches in the settings screen (GlassControls.kt). Only counts while [on]. */
+    @Volatile var controls = false
+
     private fun px(v: Float): Float = Math.max(1f, v * Resources.getSystem().displayMetrics.density)
 
     /**

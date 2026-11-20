@@ -69,6 +69,7 @@ internal object SettingsScreen {
     private var chatListBox: LinearLayout? = null
     private var themeView: TextView? = null
     private var mediaView: TextView? = null
+    private var scrollRef: ScrollView? = null
 
     private class PresetButton(val index: Int, val label: String, val max: Int, val button: Button)
 
@@ -82,14 +83,15 @@ internal object SettingsScreen {
         return JSONObject().put("open", open).put("events", arr).toString()
     }
 
-    fun show(a: Activity, stateJson: String) {
+    fun show(a: Activity, stateJson: String, keepEvents: Boolean = false, scrollY: Int = 0) {
         a.runOnUiThread {
             try {
                 state = JSONObject(stateJson)
                 dialog?.dismiss()
-                events.clear()
+                if (!keepEvents) events.clear()
                 Glass.on = state.optJSONObject("values")?.optBoolean("liquidGlass", false) == true
                 Glass.soft = Glass.on && state.optJSONObject("values")?.optBoolean("softGlass", false) == true
+                Glass.controls = Glass.on && state.optJSONObject("values")?.optBoolean("glassControls", false) == true
                 val d = Dialog(a, if (Glass.on) android.R.style.Theme_Translucent_NoTitleBar else android.R.style.Theme_Black_NoTitleBar_Fullscreen)
                 d.setContentView(build(a, d))
                 d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -110,6 +112,7 @@ internal object SettingsScreen {
                 activity = a
                 open = true
                 d.show()
+                if (scrollY > 0) scrollRef?.post { scrollRef?.scrollTo(0, scrollY) }
             } catch (t: Throwable) {
                 open = false
                 Toast.makeText(a, "Can't open the settings screen", Toast.LENGTH_SHORT).show()
@@ -182,6 +185,7 @@ internal object SettingsScreen {
         if (state.optBoolean("isDev", false)) col.addView(toolsCard(a))
         col.addView(versionsCard(a))
         val scroll = ScrollView(a)
+        scrollRef = scroll
         scroll.addView(col)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         if (Glass.soft && Wallpaper.has(a)) {
@@ -398,7 +402,7 @@ internal object SettingsScreen {
             buttons.add(b)
             b.setOnClickListener {
                 state.put("wallpaperStrength", i)
-                for (j in 1..3) (buttons[j - 1].background as? GradientDrawable)?.setColor(if (j == i) ACCENT else INPUT)
+                for (j in 1..3) recolor(buttons[j - 1], if (j == i) ACCENT else INPUT)
                 events.add(JSONObject().put("t", "set").put("k", "wallpaperStrength").put("v", i).toString())
             }
             val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -467,9 +471,10 @@ internal object SettingsScreen {
         val c = card(a, "Behaviour")
         val v = state.optJSONObject("values") ?: JSONObject()
         toggle(a, c, v, "encryptByDefault", "Encrypt outgoing messages by default (in chats without their own on/off setting)")
-        toggle(a, c, v, "liquidGlass", "Liquid glass look for the media players and this screen (frosted, see-through panels; on Android 12+ this screen also blurs what is behind it). Applies to players you open next and to this screen the next time you open it")
+        toggle(a, c, v, "liquidGlass", "Liquid glass look for the media players and this screen (frosted, see-through panels; on Android 12+ this screen also blurs what is behind it). Applies to players you open next; this screen changes at once")
         toggle(a, c, v, "softGlass", "Soft glass (needs Liquid glass): blurred wallpaper behind the settings cards and a stronger blur behind the screen")
         c.addView(label(a, "Heavier: soft glass uses more GPU and battery and may stutter on older phones.", WARN, 13f, false), top(a, 2f))
+        toggle(a, c, v, "glassControls", "Glass controls (needs Liquid glass): text boxes, buttons and switches get the frosted look too. They are built to stay readable on any wallpaper (text contrast 4.5:1 or better, 7:1 in text boxes), so the blue and red buttons come out a little deeper")
         toggle(a, c, v, "linkPreviews", "Link previews (EXPERIMENTAL): show a title, description and picture under the first https link of a decrypted message. Discord cannot make these for encrypted text, so THIS PHONE contacts the linked site: the site sees your IP address and when you opened the chat, and the picture loads from the site directly. Off by default")
 
         c.addView(label(a, "Encrypted files larger than this many MB show \"Tap to decrypt\" instead of downloading on their own (0 = always ask, default 25):", TEXT, 15f, false), top(a, 10f))
@@ -497,16 +502,22 @@ internal object SettingsScreen {
 
     /** Rounded text box that scrolls itself into view when the keyboard opens (the screen resizes for the keyboard). */
     internal fun styleInput(a: Activity, e: EditText) {
-        val bg = GradientDrawable()
-        bg.setColor(INPUT)
-        bg.cornerRadius = dp(a, 14f).toFloat()
-        e.background = bg
+        if (Glass.on && Glass.controls) {
+            e.background = GlassControls.field(dp(a, 14f).toFloat())
+            e.setHintTextColor(GlassControls.HINT) // lighter than the usual muted grey: still readable on the dark glass
+            e.setTextColor(TEXT)
+        } else {
+            val bg = GradientDrawable()
+            bg.setColor(INPUT)
+            bg.cornerRadius = dp(a, 14f).toFloat()
+            e.background = bg
+        }
         e.setPadding(dp(a, 14f), dp(a, 12f), dp(a, 14f), dp(a, 12f))
         val reveal = Runnable {
             if (e.isAttachedToWindow) e.requestRectangleOnScreen(android.graphics.Rect(0, 0, e.width, e.height + dp(a, 24f)), false)
         }
         // The keyboard needs a moment to open and resize the screen; reveal again once it has.
-        e.setOnFocusChangeListener { v, focused -> if (focused) { v.postDelayed(reveal, 150); v.postDelayed(reveal, 450) } }
+        e.setOnFocusChangeListener { v, focused -> (v.background as? ControlDrawable)?.focused = focused; if (focused) { v.postDelayed(reveal, 150); v.postDelayed(reveal, 450) } }
         e.setOnClickListener { e.postDelayed(reveal, 150); e.postDelayed(reveal, 450) }
     }
 
@@ -573,7 +584,7 @@ internal object SettingsScreen {
             row.orientation = LinearLayout.HORIZONTAL
             row.gravity = Gravity.CENTER_VERTICAL
             row.addView(label(a, "Encrypt outgoing here", TEXT, 15f, false), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            val sw = Switch(a)
+            val sw = newSwitch(a)
             sw.isChecked = o.optBoolean("enabled", false)
             sw.setOnCheckedChangeListener { _, checked ->
                 o.put("enabled", checked)
@@ -621,19 +632,28 @@ internal object SettingsScreen {
 
     // ---- small view helpers --------------------------------------------------------------------
 
+    /** Rebuilds the screen with the values as they are now, keeping the scroll position: the glass switches show their effect at once. */
+    private fun reopen(a: Activity) {
+        show(a, state.toString(), keepEvents = true, scrollY = scrollRef?.scrollY ?: 0)
+    }
+
     private fun toggle(a: Activity, parent: LinearLayout, values: JSONObject, key: String, text: String) {
         val row = LinearLayout(a)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
         row.addView(label(a, text, TEXT, 15f, false), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val sw = Switch(a)
+        val sw = newSwitch(a)
         sw.isChecked = values.optBoolean(key, false)
         sw.setOnCheckedChangeListener { _, checked ->
             values.put(key, checked)
             if (key == "liquidGlass") {
                 Glass.on = checked
-                if (!checked) Glass.soft = false
+                if (!checked) {
+                    Glass.soft = false
+                    Glass.controls = false
+                }
             }
+            if (key == "glassControls") Glass.controls = checked && Glass.on
             if (key == "softGlass") {
                 Glass.soft = checked && Glass.on
                 if (checked) Toast.makeText(a, "Soft glass is heavier: more GPU and battery use", Toast.LENGTH_LONG).show()
@@ -642,6 +662,7 @@ internal object SettingsScreen {
                 Toast.makeText(a, "Choose a wallpaper first", Toast.LENGTH_LONG).show()
             }
             events.add(JSONObject().put("t", "set").put("k", key).put("v", checked).toString())
+            if (key == "liquidGlass" || key == "softGlass" || key == "glassControls") sw.post { reopen(a) }
         }
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         lp.leftMargin = dp(a, 12f)
@@ -682,11 +703,30 @@ internal object SettingsScreen {
         b.text = text
         b.setAllCaps(false)
         b.setTextColor(Color.WHITE)
+        if (Glass.on && Glass.controls) {
+            b.background = GlassControls.button(dp(a, 12f).toFloat(), color, color == INPUT)
+            return b
+        }
         val bg = GradientDrawable()
         bg.setColor(color)
         bg.cornerRadius = dp(a, 6f).toFloat()
         b.background = bg
         return b
+    }
+
+    /** Gives a button the look of [color] again (a chosen chip is ACCENT, the others INPUT), in either look. */
+    internal fun recolor(b: Button?, color: Int) {
+        if (b == null) return
+        val bg = b.background
+        if (bg is GradientDrawable) bg.setColor(color)
+        else if (Glass.on && Glass.controls) b.background = GlassControls.button(12f * b.resources.displayMetrics.density, color, color == INPUT)
+    }
+
+    /** A switch; with glass controls it gets a glass track and bead. */
+    internal fun newSwitch(a: Activity): Switch {
+        val sw = Switch(a)
+        if (Glass.on && Glass.controls) GlassControls.style(sw)
+        return sw
     }
 
     internal fun top(a: Activity, margin: Float): LinearLayout.LayoutParams {

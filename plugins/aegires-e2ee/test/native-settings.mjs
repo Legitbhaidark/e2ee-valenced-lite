@@ -24,6 +24,7 @@ const { snapshot, handleEvent, openNativeSettings, TOGGLES } = await import("../
 const ok = (m) => console.log("  ok  " + m);
 const KAT_B64 = Buffer.from("9ff38392f0eda1da7689e211bae2a5a3ef7d464fa87a243411537fc5564527f8", "hex").toString("base64");
 
+const glassCalls = [];
 let opened = null;
 const updates = [];
 let queue = [];
@@ -35,6 +36,7 @@ const bridge = async (name, args) => {
     case "aegires.argon2engine": return "c:arm64-v8a";
     case "aegires.settingsopen": opened = JSON.parse(args[0]); return "ok";
     case "aegires.settingsupdate": updates.push(JSON.parse(args[0])); return "ok";
+    case "aegires.glass": glassCalls.push(args[0]); return "ok";
     case "aegires.settingstake": { const events = queue; queue = []; return JSON.stringify({ open: isOpen, events }); }
     case "valenced.fs.getConstants": return { cache: "/c" };
     default: return "";
@@ -111,6 +113,29 @@ assert.equal(storage.encryptByDefault, true);
 await handleEvent({ t: "set", k: "encryptByDefault", v: "yes" });
 assert.equal(storage.encryptByDefault, false, "only a real true switches on");
 ok("toggles are written to storage");
+
+// liquid glass: one bit mask tells the native half what to draw (1 glass, 2 soft glass, 4 glass controls)
+glassCalls.length = 0;
+await handleEvent({ t: "set", k: "glassControls", v: true });
+await tick(5);
+assert.equal(storage.glassControls, true);
+assert.equal(glassCalls.at(-1), "0", "glass controls do nothing while liquid glass is off");
+await handleEvent({ t: "set", k: "liquidGlass", v: true });
+await tick(5);
+assert.equal(glassCalls.at(-1), "5", "glass + glass controls");
+await handleEvent({ t: "set", k: "softGlass", v: true });
+await tick(5);
+assert.equal(glassCalls.at(-1), "7", "glass + soft glass + glass controls");
+await handleEvent({ t: "set", k: "glassControls", v: false });
+await tick(5);
+assert.equal(glassCalls.at(-1), "3", "glass + soft glass");
+await handleEvent({ t: "set", k: "softGlass", v: false });
+await tick(5);
+assert.equal(glassCalls.at(-1), "1", "glass only");
+await handleEvent({ t: "set", k: "liquidGlass", v: false });
+await tick(5);
+assert.equal(glassCalls.at(-1), "0", "liquid glass off turns everything off");
+ok("liquid glass: bit mask for glass, soft glass and glass controls");
 
 // not allowed
 await handleEvent({ t: "set", k: "keyV2", v: true });

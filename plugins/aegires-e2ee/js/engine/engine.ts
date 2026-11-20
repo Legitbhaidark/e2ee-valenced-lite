@@ -161,6 +161,12 @@ export async function nativeGlass(mode: number): Promise<void> {
   await callNative("glass", [String(mode)], 3000);
 }
 
+/** What the native half should draw: bit 1 = liquid glass, bit 2 = soft glass, bit 4 = glass controls. The last two count only while liquid glass is on. */
+export function glassMode(): number {
+  if (storage.liquidGlass !== true) return 0;
+  return 1 | (storage.softGlass === true ? 2 : 0) | (storage.glassControls === true ? 4 : 0);
+}
+
 /** Wallpaper behind Discord itself (the picture is chosen on the settings screen): on, blur, strength 1-3. */
 export async function nativeAppWallpaper(on: boolean, blur: boolean, strength: number): Promise<void> {
   await callNative("appwallpaper", [on ? "1" : "0", blur ? "1" : "0", String(strength)], 3000);
@@ -352,7 +358,7 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
-    void nativeGlass(storage.liquidGlass === true ? (storage.softGlass === true ? 2 : 1) : 0).catch(() => {});
+    void nativeGlass(glassMode()).catch(() => {});
     applyAppWallpaper();
     void nativeTouchSpy().catch(() => {}); // the UI is up by now, so the window can be wrapped
     diag.argon2Engine = await readArgon2Engine();

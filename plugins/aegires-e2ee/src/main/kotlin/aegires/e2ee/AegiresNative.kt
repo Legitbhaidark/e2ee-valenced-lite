@@ -234,12 +234,14 @@ val aegiresNative = plugin {
             "ok"
         }
 
-        // Liquid glass look: "0" off, "1" glass, "2" soft glass, see Glass.kt. Returns "ok".
+        // Liquid glass look, a bit mask: 1 = glass, 2 = soft glass, 4 = glass controls (0 = off), see Glass.kt. Returns "ok".
         registerNativeMethod("aegires.glass") { rawArgs ->
             val args = rawArgs.asDelegate()
             val on: String by args.string()
-            Glass.on = on == "1" || on == "2"
-            Glass.soft = on == "2"
+            val bits = on.toIntOrNull() ?: 0
+            Glass.on = (bits and 1) != 0
+            Glass.soft = Glass.on && (bits and 2) != 0
+            Glass.controls = Glass.on && (bits and 4) != 0
             "ok"
         }
 

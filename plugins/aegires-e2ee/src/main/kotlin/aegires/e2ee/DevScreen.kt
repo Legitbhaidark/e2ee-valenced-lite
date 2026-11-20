@@ -271,7 +271,7 @@ internal object DevScreen {
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
         row.addView(S.label(a, text, S.TEXT, 15f, false), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val sw = Switch(a)
+        val sw = S.newSwitch(a)
         sw.setOnCheckedChangeListener { _, checked -> if (!refreshing) onChange(checked) }
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         lp.leftMargin = S.dp(a, 12f)
@@ -302,7 +302,7 @@ internal object DevScreen {
     }
 
     private fun paint(b: Button?, chosen: Boolean) {
-        (b?.background as? GradientDrawable)?.setColor(if (chosen) S.ACCENT else S.INPUT)
+        S.recolor(b, if (chosen) S.ACCENT else S.INPUT)
     }
 
     private fun fillLines(box: LinearLayout?, lines: JSONArray?, danger: (String) -> Boolean) {
