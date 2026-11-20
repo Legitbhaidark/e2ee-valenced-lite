@@ -1,5 +1,5 @@
-import aegires.e2ee.Crypto;
-import aegires.e2ee.NativeOps;
+import e2ee.lite.Crypto;
+import e2ee.lite.NativeOps;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import javax.crypto.SecretKey;
@@ -9,7 +9,7 @@ import javax.crypto.spec.SecretKeySpec;
  * Round-trips the Java Crypto (copied from Aegires) and the NativeOps wrappers the bridge calls,
  * and checks that the context binding rejects other channels and senders.
  *
- *   javac -d /tmp/ct src/main/java/aegires/e2ee/*.java test/native/CryptoTest.java && java -cp /tmp/ct CryptoTest
+ *   javac -d /tmp/ct src/main/java/e2ee/lite/*.java test/native/CryptoTest.java && java -cp /tmp/ct CryptoTest
  */
 public class CryptoTest {
     static int failed = 0;

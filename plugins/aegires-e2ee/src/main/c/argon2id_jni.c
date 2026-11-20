@@ -1,6 +1,6 @@
 /*
  * Argon2id v1.3 (RFC 9106), one lane, no secret / associated data, with its own BLAKE2b.
- * Same algorithm as Argon2id.java; the JNI entry point is aegires.e2ee.NativeArgon2.hashNative.
+ * Same algorithm as Argon2id.java; the JNI entry point is e2ee.lite.NativeArgon2.hashNative.
  * Built by the Gradle task buildNativeLibs (Android NDK) into lib/<abi>/libaegirescrypto.so inside
  * plugin.jar. NativeArgon2.java checks it against the Java version before it is used.
  */
@@ -190,7 +190,7 @@ static int argon2id_hash(const uint8_t *password,size_t pwdlen,const uint8_t *sa
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_aegires_e2ee_NativeArgon2_hashNative(JNIEnv *env, jclass clazz,
+Java_e2ee_lite_NativeArgon2_hashNative(JNIEnv *env, jclass clazz,
         jbyteArray password, jbyteArray salt, jint passes, jint memoryKiB, jint outLen) {
     if (!salt || passes < 1 || memoryKiB < 8 || outLen < 4) return NULL;
     jsize pwdLen = password ? (*env)->GetArrayLength(env, password) : 0;
@@ -319,7 +319,7 @@ static void hkdf_sha256(const uint8_t *salt, size_t sl, const uint8_t *ikm, size
  * so the JNI call is not what gets timed) and returns the last output. NULL for bad arguments.
  */
 JNIEXPORT jbyteArray JNICALL
-Java_aegires_e2ee_NativeArgon2_hkdfNative(JNIEnv *env, jclass clazz,
+Java_e2ee_lite_NativeArgon2_hkdfNative(JNIEnv *env, jclass clazz,
         jbyteArray salt, jbyteArray ikm, jbyteArray info, jint len, jint iterations) {
     (void)clazz;
     if (!salt || !ikm || !info || len < 1 || len > 255 * 32 || iterations < 1) return NULL;

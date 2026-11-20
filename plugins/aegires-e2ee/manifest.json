@@ -1,27 +1,23 @@
 {
 	"format": 1,
-	"id": "io.github.system32crowdstrikewin11.aegires-e2ee",
-	"name": "Aegires E2EE",
-	"description": "End-to-end encryption for Discord on Valenced, compatible with the Aegires Android app. Encrypts and decrypts text messages, images, GIFs, videos, audio and files (up to 1 GiB) with a shared password, using Aegires v2 (Argon2id, AES-GCM). An E2EE button in the chat header switches encryption per chat and decrypted messages get a lock icon. Videos and audio play right in the chat (speed, 10 s jumps, picture-in-picture), with an optional liquid glass look, wallpapers and Aegires color themes. A native module (C Argon2id with Kotlin/Java fallback) makes key derivation much faster than plain JS.",
-	"author": "Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
-	"version": "0.1.34",
+	"id": "io.github.legitbhaidark.e2ee-lite",
+	"name": "E2EE Lite",
+	"description": "Lightweight end-to-end encryption for Discord on Valenced, compatible with the Aegires Android app (Aegires v2: Argon2id, AES-GCM). Encrypts and decrypts text, images, GIFs, videos, audio and files with a shared password. Settings: set the encryption key and pick the encryption preset. An E2EE button in the chat header switches encryption per chat, decrypted messages get a lock icon, and videos and audio play in the chat.",
+	"author": "Legitbhaidark (https://github.com/Legitbhaidark \"GitHub\"), based on Aegires E2EE by Dark (https://github.com/system32crowdstrikewin11 \"GitHub\")",
+	"version": "0.1.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
 		},
 		"discord": {
 			"version": "*"
-		},
-		"valenced.api.themes": {
-			"version": ">=1 <2",
-			"optional": true
 		}
 	},
 	"dist": {
 		"script": "index.js",
 		"android": {
 			"path": "plugin.jar",
-			"class": "aegires.e2ee.AegiresNative"
+			"class": "e2ee.lite.LiteNative"
 		}
 	}
 }

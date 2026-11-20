@@ -1,4 +1,4 @@
-import aegires.e2ee.NativeOps;
+import e2ee.lite.NativeOps;
 import java.lang.reflect.Method;
 import java.util.Base64;
 
@@ -8,7 +8,7 @@ import java.util.Base64;
  * Includes the real parameters (t=3, 64 MiB) used for Aegires v2 keys.
  *
  * From the plugin folder:
- *   javac -d /tmp/an src/main/java/aegires/e2ee/*.java test/native/NativeOpsTest.java && java -cp /tmp/an NativeOpsTest
+ *   javac -d /tmp/an src/main/java/e2ee/lite/*.java test/native/NativeOpsTest.java && java -cp /tmp/an NativeOpsTest
  */
 public class NativeOpsTest {
     public record Case(String name, String pwB64, String saltB64, int t, int mKiB, int len, String expectedHex) {}

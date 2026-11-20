@@ -1,5 +1,4 @@
-// Settings entry point. The settings themselves are the native (Kotlin) screen - SettingsScreen.kt and
-// DevScreen.kt - so this file only has:
+// Settings entry point. The settings themselves are the native (Kotlin) screen - SettingsScreen.kt - so this file only has:
 //   - the launcher the plugin's gear button opens: it opens the native screen at once and steps back
 //     when that screen is closed, and
 //   - a small fallback screen for when the native module is missing (set the global key, and in dev

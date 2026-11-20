@@ -1,5 +1,5 @@
 // Tests the chat pictures for decrypted video/audio (media.ts), the tap routing to the native
-// player (player.ts) and the opt-in link previews (embeds.ts), against a FAKE native bridge.
+// player (player.ts), against a FAKE native bridge.
 // What Android / Java really do (frame grab, drawing, HTTP) is tested elsewhere or by CI + a phone.
 //
 // Run from the plugin folder:  node test/media-embeds.mjs
@@ -32,7 +32,6 @@ const { attachStorage, storage } = await import("../js/storage.ts");
 const { initStorage } = await import("../js/state.ts");
 const { startNative, stopNative, nativeReady } = await import("../js/engine/engine.ts");
 const { handleAttachments, clearMedia, mediaForUri, decryptedMedia, placeholderIdForUri, placeholderIdFor, approveDecrypt, autoDecryptBytes } = await import("../js/patches/media.ts");
-const { firstLinkUrl, embedFor, handleLinkPreviews, clearLinkPreviews } = await import("../js/patches/embeds.ts");
 
 const ok = (m) => console.log("  ok  " + m);
 const CH = "123456789012345678";
@@ -43,7 +42,6 @@ const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------- fake bridge + dispatcher
 const calls = [];
 const dispatched = [];
-let previewReply = '{"title":"Hello","description":"World","image":"https://example.com/i.png","site":"Example","w":1200,"h":630}';
 let thumbFails = false;
 let openDelay = 0;
 let openFail = "";
@@ -53,26 +51,25 @@ const imageSizes = {}; // path suffix -> "W,H" for the fake probe
 const bridge = async (name, args) => {
   calls.push({ name, args });
   switch (name) {
-    case "aegires.ping": return "pong";
-    case "aegires.argon2id": return KAT_B64;
-    case "aegires.argon2with": return KAT_B64;
-    case "aegires.argon2engine": return "c:arm64-v8a";
+    case "e2eelite.ping": return "pong";
+    case "e2eelite.argon2id": return KAT_B64;
+    case "e2eelite.argon2with": return KAT_B64;
+    case "e2eelite.argon2engine": return "c:arm64-v8a";
     case "valenced.fs.getConstants": return { cache: "/data/cache" };
     case "valenced.fs.delete": return "";
-    case "aegires.openfile":
+    case "e2eelite.openfile":
       if (openDelay) await new Promise((r) => setTimeout(r, openDelay));
       if (openFail) throw new Error(openFail);
       return "1234";
-    case "aegires.progress": return progressReply;
-    case "aegires.placeholder": return args[0] === "audio" ? "720,216" : "640,360";
-    case "aegires.mediainfo": {
+    case "e2eelite.progress": return progressReply;
+    case "e2eelite.placeholder": return args[0] === "audio" ? "720,216" : "640,360";
+    case "e2eelite.mediainfo": {
       const k = Object.keys(imageSizes).find((x) => args[0].endsWith(x));
       return k ? imageSizes[k] : args[1] === "video" ? "1080,1920" : "640,480";
     }
-    case "aegires.mediathumb":
+    case "e2eelite.mediathumb":
       if (thumbFails) throw new Error("no video frame");
       return args[0] === "audio" ? "720,216" : "720,1280";
-    case "aegires.linkpreview": return previewReply;
     default: throw new Error("unexpected native call " + name);
   }
 };
@@ -102,12 +99,12 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   const m = message("m1", [att("111", "0123456789abcdef0123.enc.mp4")]);
   handleAttachments(m, CH, AUTHOR, []);
   await tick(50);
-  const thumbCall = calls.find((c) => c.name === "aegires.mediathumb");
-  assert.deepEqual(thumbCall.args.slice(0, 3), ["video", "/data/cache/aegires/in/111.mp4", "/data/cache/aegires/in/111.thumb.jpg"]);
+  const thumbCall = calls.find((c) => c.name === "e2eelite.mediathumb");
+  assert.deepEqual(thumbCall.args.slice(0, 3), ["video", "/data/cache/e2ee-lite/in/111.mp4", "/data/cache/e2ee-lite/in/111.thumb.jpg"]);
   const upd = dispatched.find((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m1");
   assert.ok(upd, "a MESSAGE_UPDATE with the rewritten attachment is dispatched");
   const a = upd.message.attachments[0];
-  assert.equal(a.url, "file:///data/cache/aegires/in/111.thumb.jpg");
+  assert.equal(a.url, "file:///data/cache/e2ee-lite/in/111.thumb.jpg");
   assert.equal(a.proxy_url, a.url);
   assert.equal(a.content_type, "image/jpeg");
   assert.equal(a.filename, "0123456789abcdef0123.mp4.jpg");
@@ -118,18 +115,18 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   // a second pass over the same message applies the cached result at once
   const again = message("m1", [att("111", "0123456789abcdef0123.enc.mp4")]);
   handleAttachments(again, CH, AUTHOR, []);
-  assert.equal(again.attachments[0].url, "file:///data/cache/aegires/in/111.thumb.jpg");
+  assert.equal(again.attachments[0].url, "file:///data/cache/e2ee-lite/in/111.thumb.jpg");
   ok("cached video is rewritten immediately on the next event");
 
   // tap routing: the thumbnail uri maps back to the video file
-  const hit = mediaForUri("file:///data/cache/aegires/in/111.thumb.jpg?x=1");
-  assert.deepEqual(hit, { path: "/data/cache/aegires/in/111.mp4", title: "Video", w: 720, h: 1280 });
+  const hit = mediaForUri("file:///data/cache/e2ee-lite/in/111.thumb.jpg?x=1");
+  assert.deepEqual(hit, { path: "/data/cache/e2ee-lite/in/111.mp4", title: "Video", w: 720, h: 1280 });
   assert.deepEqual(decryptedMedia(["111"]), hit);
   assert.deepEqual(decryptedMedia([], "m1", 0), hit);
-  assert.equal(mediaForUri("file:///data/cache/aegires/in/111.mp4").path, "/data/cache/aegires/in/111.mp4");
-  assert.equal(mediaForUri("file:///data/cache/aegires/in/222.png"), null);
+  assert.equal(mediaForUri("file:///data/cache/e2ee-lite/in/111.mp4").path, "/data/cache/e2ee-lite/in/111.mp4");
+  assert.equal(mediaForUri("file:///data/cache/e2ee-lite/in/222.png"), null);
   assert.equal(mediaForUri("file:///etc/passwd.mp4"), null);
-  assert.equal(mediaForUri("https://cdn.discordapp.com/x/aegires/y.mp4"), null);
+  assert.equal(mediaForUri("https://cdn.discordapp.com/x/e2ee-lite/y.mp4"), null);
   ok("tap routing: thumbnail -> video file; images, foreign paths and http urls are not ours");
 }
 
@@ -141,7 +138,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   await tick(50);
   const upd = dispatched.find((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m2");
   const a = upd.message.attachments[0];
-  assert.equal(a.url, "file:///data/cache/aegires/in/112.mov");
+  assert.equal(a.url, "file:///data/cache/e2ee-lite/in/112.mov");
   assert.equal(a.content_type, "image/jpeg");
   assert.equal(a.width, 1080);
   thumbFails = false;
@@ -156,16 +153,16 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   const upd = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m3").pop();
   assert.ok(upd);
   const [a, b] = upd.message.attachments;
-  assert.equal(a.url, "file:///data/cache/aegires/in/113.thumb.jpg");
+  assert.equal(a.url, "file:///data/cache/e2ee-lite/in/113.thumb.jpg");
   assert.equal(a.width, 720);
   assert.equal(a.height, 216);
   assert.equal(a.content_type, "image/jpeg");
-  const t1 = calls.filter((c) => c.name === "aegires.mediathumb" && c.args[0] === "audio");
+  const t1 = calls.filter((c) => c.name === "e2eelite.mediathumb" && c.args[0] === "audio");
   assert.equal(t1.find((c) => c.args[1].endsWith("113.m4a")).args[3], "My Song");
   assert.equal(t1.find((c) => c.args[1].endsWith("114.mp3")).args[3], "Audio");
-  assert.deepEqual(mediaForUri(a.url), { path: "/data/cache/aegires/in/113.m4a", title: "My Song", w: 720, h: 216 });
+  assert.deepEqual(mediaForUri(a.url), { path: "/data/cache/e2ee-lite/in/113.m4a", title: "My Song", w: 720, h: 216 });
   assert.equal(mediaForUri(b.url).title, "Audio");
-  assert.ok(!calls.some((c) => c.name === "aegires.mediainfo" && c.args[0].endsWith("113.m4a")), "no image/video probe for audio");
+  assert.ok(!calls.some((c) => c.name === "e2eelite.mediainfo" && c.args[0].endsWith("113.m4a")), "no image/video probe for audio");
   ok("decrypted audio: card picture, readable name as title, random names become 'Audio'");
 }
 
@@ -199,13 +196,13 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   handleAttachments(m, CH, AUTHOR, []);
   handleAttachments(message("m5", [{ ...big }]), CH, AUTHOR, []); // a second event while it is being drawn
   await tick(50);
-  assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 0, "nothing is downloaded before the tap");
-  const drawn = calls.filter((c) => c.name === "aegires.placeholder");
+  assert.equal(calls.filter((c) => c.name === "e2eelite.openfile").length, 0, "nothing is downloaded before the tap");
+  const drawn = calls.filter((c) => c.name === "e2eelite.placeholder");
   assert.equal(drawn.length, 1, "drawn once, not once per event");
   assert.deepEqual(drawn[0].args.slice(0, 4), ["video", "tap", "-1", String(60 * 1048576)]);
   const up = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m5").pop();
   const a = up.message.attachments[0];
-  assert.match(a.url, /\/aegires\/in\/120\.ph\d+\.jpg$/);
+  assert.match(a.url, /\/e2ee-lite\/in\/120\.ph\d+\.jpg$/);
   assert.equal(a.filename, "encrypted-video.jpg");
   assert.equal(a.width, 640);
   assert.equal(a.height, 360);
@@ -219,7 +216,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
 
   // tap resolution
   assert.equal(placeholderIdForUri(a.url + "?x=1"), "120");
-  assert.equal(placeholderIdForUri("file:///data/cache/aegires/in/999.ph1.jpg"), null);
+  assert.equal(placeholderIdForUri("file:///data/cache/e2ee-lite/in/999.ph1.jpg"), null);
   assert.equal(placeholderIdFor(["120"]), "120");
   assert.equal(placeholderIdFor([], "m5", 0), "120");
   assert.equal(placeholderIdFor(["nope"]), null);
@@ -229,9 +226,9 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   assert.equal(approveDecrypt("120"), true);
   assert.equal(approveDecrypt("120"), true, "a second tap while working is swallowed, not restarted");
   await tick(80);
-  assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 1);
+  assert.equal(calls.filter((c) => c.name === "e2eelite.openfile").length, 1);
   const fin = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m5").pop();
-  assert.equal(fin.message.attachments[0].url, "file:///data/cache/aegires/in/120.thumb.jpg");
+  assert.equal(fin.message.attachments[0].url, "file:///data/cache/e2ee-lite/in/120.thumb.jpg");
   assert.equal(approveDecrypt("not-a-placeholder"), false);
   ok("tap decrypts the file; the finished picture (with play button) replaces the placeholder");
 
@@ -240,8 +237,8 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   calls.length = 0;
   handleAttachments(message("m6", [att("121", "0123456789abcdef0123.enc.png")]), CH, AUTHOR, []);
   await tick(50);
-  assert.equal(calls.filter((c) => c.name === "aegires.openfile").length, 0);
-  assert.equal(calls.filter((c) => c.name === "aegires.placeholder")[0].args[0], "image");
+  assert.equal(calls.filter((c) => c.name === "e2eelite.openfile").length, 0);
+  assert.equal(calls.filter((c) => c.name === "e2eelite.placeholder")[0].args[0], "image");
   storage.autoDecryptMB = 25;
   ok("limit 0: even a small file waits for a tap");
 }
@@ -255,7 +252,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   sa.size = 1048576;
   handleAttachments(message("m7", [sa]), CH, AUTHOR, []);
   await tick(200);
-  let work = calls.filter((c) => c.name === "aegires.placeholder");
+  let work = calls.filter((c) => c.name === "e2eelite.placeholder");
   assert.equal(work.length, 1, "the skeleton is drawn at once, not after a delay");
   assert.ok(dispatched.some((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7" && e.message.attachments[0].url.includes(".ph")), "and shown");
   assert.deepEqual(work[0].args.slice(0, 3), ["video", "work", "0"]);
@@ -263,19 +260,19 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   await tick(700);
   progressReply = "41,100"; // under +3 points: no redraw
   await tick(700);
-  work = calls.filter((c) => c.name === "aegires.placeholder");
+  work = calls.filter((c) => c.name === "e2eelite.placeholder");
   assert.deepEqual(work.map((c) => c.args[2]), ["0", "40"], "redrawn when the percentage moved by 3 or more");
   await tick(500); // finished (1700 ms)
   const last = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7").pop();
-  assert.equal(last.message.attachments[0].url, "file:///data/cache/aegires/in/130.thumb.jpg");
+  assert.equal(last.message.attachments[0].url, "file:///data/cache/e2ee-lite/in/130.thumb.jpg");
   const upd0 = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7").length;
   await tick(800); // the reload nudge
   const upds = dispatched.filter((e) => e.type === "MESSAGE_UPDATE" && e.message.id === "m7");
   assert.equal(upds.length, upd0 + 1, "one more update re-sends the finished picture");
-  assert.equal(upds[upds.length - 1].message.attachments[0].url, "file:///data/cache/aegires/in/130.thumb.jpg");
-  const before = calls.filter((c) => c.name === "aegires.placeholder").length;
+  assert.equal(upds[upds.length - 1].message.attachments[0].url, "file:///data/cache/e2ee-lite/in/130.thumb.jpg");
+  const before = calls.filter((c) => c.name === "e2eelite.placeholder").length;
   await tick(900);
-  assert.equal(calls.filter((c) => c.name === "aegires.placeholder").length, before, "no more redraws after it finished");
+  assert.equal(calls.filter((c) => c.name === "e2eelite.placeholder").length, before, "no more redraws after it finished");
   openDelay = 0;
   progressReply = "";
   ok("slow file: skeleton at once, redrawn on progress, replaced by the result (+ one reload nudge), then silent");
@@ -329,97 +326,7 @@ const message = (id, attachments) => ({ id, channel_id: CH, author: { id: AUTHOR
   ok("size tags: one per attachment in order, unknown kept as [sz:0,0], text after the tags untouched");
 }
 
-// ---------------------------------------------------------------- 5. link url extraction
-{
-  const cases = [
-    ["see https://example.com/a?b=1.", "https://example.com/a?b=1"],
-    ["(https://example.com/x)", "https://example.com/x"],
-    ["https://en.wikipedia.org/wiki/Foo_(bar)", "https://en.wikipedia.org/wiki/Foo_(bar)"],
-    ["<https://example.com/no> https://example.org/yes", "https://example.org/yes"],
-    ["<https://example.com/no>", null],
-    ["http://insecure.example.com", null],
-    ["no link here", null],
-    ["a https://", null],
-    ["x https://example.com/path, then more", "https://example.com/path"],
-    [42, null],
-  ];
-  for (const [text, want] of cases) assert.equal(firstLinkUrl(text), want, String(text));
-  ok("first https link: trailing punctuation, parentheses, <no embed> syntax, http and junk");
-
-  const e = embedFor("https://example.com/p", { title: "T", description: "D", image: "https://example.com/i.png", site: "S", w: 800, h: 400 });
-  assert.deepEqual(e, { type: "link", url: "https://example.com/p", title: "T", description: "D", provider: { name: "S" }, thumbnail: { url: "https://example.com/i.png", proxy_url: "https://example.com/i.png", width: 800, height: 400 } });
-  const e2 = embedFor("https://e.com", { title: "T", image: "https://e.com/i.png" });
-  assert.equal(e2.thumbnail.width, 1200);
-  assert.equal(e2.thumbnail.height, 630);
-  ok("embed object shape (size from the page, or a typical card size)");
-}
-
-// ---------------------------------------------------------------- 6. link previews: off by default, on when asked
-{
-  clearLinkPreviews();
-  calls.length = 0;
-  dispatched.length = 0;
-  assert.equal(storage.linkPreviews, false);
-  const off = { id: "p1", channel_id: CH, content: "x https://example.com/a" };
-  handleLinkPreviews(off, "x https://example.com/a", CH);
-  await tick();
-  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 0);
-  assert.equal(off.embeds, undefined);
-  ok("link previews are OFF by default: no lookup is made");
-
-  storage.linkPreviews = true;
-  const m1 = { id: "p1", channel_id: CH, content: "x https://example.com/a" };
-  const m2 = { id: "p2", channel_id: CH, content: "again https://example.com/a" };
-  handleLinkPreviews(m1, "x https://example.com/a", CH);
-  handleLinkPreviews(m2, "again https://example.com/a", CH);
-  await tick(50);
-  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 1, "one lookup for the same link");
-  const ups = dispatched.filter((e) => e.type === "MESSAGE_UPDATE");
-  assert.deepEqual(ups.map((e) => e.message.id).sort(), ["p1", "p2"]);
-  assert.equal(ups[0].message.embeds[0].title, "Hello");
-  assert.equal(ups[0].message.embeds[0].thumbnail.width, 1200);
-  ok("on: one lookup per link, every waiting message gets its embed");
-
-  const m3 = { id: "p3", channel_id: CH, content: "https://example.com/a" };
-  handleLinkPreviews(m3, "https://example.com/a", CH);
-  assert.equal(m3.embeds.length, 1);
-  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 1);
-  ok("a cached preview is attached at once, without another lookup");
-
-  const real = { id: "p4", channel_id: CH, content: "https://example.com/zzz", embeds: [{ type: "rich" }] };
-  handleLinkPreviews(real, "https://example.com/zzz", CH);
-  assert.equal(real.embeds.length, 1);
-  assert.equal(real.embeds[0].type, "rich");
-  ok("a message that already has an embed is left alone");
-
-  // no data on the page: nothing is shown, and it is not asked again
-  previewReply = "";
-  calls.length = 0;
-  dispatched.length = 0;
-  const e1 = { id: "p5", channel_id: CH, content: "https://nodata.example.com/" };
-  handleLinkPreviews(e1, "https://nodata.example.com/", CH);
-  await tick(50);
-  assert.equal(dispatched.length, 0);
-  handleLinkPreviews({ id: "p6", channel_id: CH }, "https://nodata.example.com/", CH);
-  await tick(20);
-  assert.equal(calls.filter((c) => c.name === "aegires.linkpreview").length, 1);
-  ok("a page without data gives no embed and is not looked up again");
-
-  // a failing lookup is remembered too
-  const failing = async (name, args) => { if (name === "aegires.linkpreview") throw new Error("address not public"); return bridge(name, args); };
-  bindHost({ unscoped: { modules: { native: { callNativeMethod: failing } }, discord: { common: { flux: { Dispatcher: { dispatch: (e) => dispatched.push(e) } } } } } });
-  const f1 = { id: "p7", channel_id: CH };
-  handleLinkPreviews(f1, "https://127.0.0.1/admin", CH);
-  await tick(30);
-  assert.equal(f1.embeds, undefined);
-  ok("a refused / failed lookup shows nothing and does not break the message");
-
-  // turning it off in settings clears what was learned
-  clearLinkPreviews();
-  storage.linkPreviews = false;
-}
-
 stopNative();
 clearMedia();
 unbindHost();
-console.log("\nmedia and link preview tests passed." + (realCrypto ? "" : " (crypto packages were stubbed)"));
+console.log("\nmedia tests passed." + (realCrypto ? "" : " (crypto packages were stubbed)"));

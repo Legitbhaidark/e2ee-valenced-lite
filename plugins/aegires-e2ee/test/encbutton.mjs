@@ -33,13 +33,13 @@ const sentStates = [];
 
 const bridge = async (name, args) => {
   switch (name) {
-    case "aegires.ping": return "pong";
-    case "aegires.argon2id": case "aegires.argon2with": return KAT_B64;
-    case "aegires.argon2engine": return "c:arm64-v8a";
-    case "aegires.encbutton": sentStates.push(args[0]); return "ok";
-    case "aegires.encbuttonstatus": return "shown";
-    case "aegires.toast": toasts.push(args[0]); return "ok";
-    case "aegires.encbuttontaps": { const n = taps; taps = 0; return String(n); }
+    case "e2eelite.ping": return "pong";
+    case "e2eelite.argon2id": case "e2eelite.argon2with": return KAT_B64;
+    case "e2eelite.argon2engine": return "c:arm64-v8a";
+    case "e2eelite.encbutton": sentStates.push(args[0]); return "ok";
+    case "e2eelite.encbuttonstatus": return "shown";
+    case "e2eelite.toast": toasts.push(args[0]); return "ok";
+    case "e2eelite.encbuttontaps": { const n = taps; taps = 0; return String(n); }
     case "valenced.fs.getConstants": return { cache: "/c" };
     default: return "";
   }

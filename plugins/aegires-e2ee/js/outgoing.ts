@@ -126,10 +126,10 @@ async function jsDims(src: string, kind: MediaKind): Promise<Dims | null> {
   try { return dimsFromBase64(await readUriBase64(src, 24 * 1024 * 1024), kind); } catch { return null; }
 }
 
-/** Seals the file natively into <cache>/aegires/. Resolves to the new file:// uri, its size and, when asked, the plaintext's pixel size. */
+/** Seals the file natively into <cache>/e2ee-lite/. Resolves to the new file:// uri, its size and, when asked, the plaintext's pixel size. */
 async function sealNative(src: string, seal: Seal, want: MediaKind | null = null): Promise<{ uri: string; size: number; dims: Dims | null }> {
   if (!nativeReady()) throw new Error("native module not available");
-  const out = `${await cacheDir()}/aegires/${tempName("bin")}`;
+  const out = `${await cacheDir()}/e2ee-lite/${tempName("bin")}`;
   let size: number;
   let dims: Dims | null = null;
   try {

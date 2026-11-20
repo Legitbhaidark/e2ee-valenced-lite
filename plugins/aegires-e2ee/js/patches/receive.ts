@@ -21,7 +21,6 @@ import { notify } from "../notify.ts";
 import { ATTACHMENTS_BLOCKED_MSG, attachmentsEnabled } from "../features.ts";
 import { encryptAttachments } from "../outgoing.ts";
 import { clearMedia, handleAttachments, noteNetworkEvent } from "./media.ts";
-import { clearLinkPreviews, handleLinkPreviews } from "./embeds.ts";
 import { diag } from "../diag.ts";
 
 /** Ids of messages we decrypted, so edits of them stay encrypted (see send.ts). */
@@ -86,7 +85,6 @@ function decryptMessage(m: any, fallbackChannelId?: string): void {
       const sp = splitSizeTags(plain);
       tags = sp.sizes;
       m.content = sp.text || !sp.sizes.length ? (storage.showLock && lockMode.front ? LOCK : "") + sp.text : "";
-      handleLinkPreviews(m, sp.text, channelId);
     } else if (r === "nokey") {
       diag.noKey++;
     } else if (r === "noauthor") {
@@ -191,7 +189,6 @@ export function installReceivePatch(): () => void {
   if (typeof hook !== "function") throw new Error("Valenced onAnyFluxEventDispatched not found");
 
   clearMedia(); // decrypted files left by an earlier session
-  clearLinkPreviews();
   const unpatch = hook((event: any) => {
     try {
       noteNetworkEvent(event);
@@ -205,8 +202,7 @@ export function installReceivePatch(): () => void {
   return () => {
     unpatch();
     clearMedia();
-    clearLinkPreviews();
-    encryptedIds.clear();
+      encryptedIds.clear();
     authorById.clear();
   };
 }

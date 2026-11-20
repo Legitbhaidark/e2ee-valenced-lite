@@ -30,8 +30,8 @@ function install(behavior = {}) {
   const callNativeMethod = async (name, args) => {
     calls.push({ name, args });
     if (behavior.reject) throw new Error(behavior.reject);
-    if (name === "aegires.ping") return behavior.ping === undefined ? "pong" : behavior.ping;
-    if (name === "aegires.argon2id") {
+    if (name === "e2eelite.ping") return behavior.ping === undefined ? "pong" : behavior.ping;
+    if (name === "e2eelite.argon2id") {
       const [pw, salt, t, m, len] = args;
       // the self-check call: answer with the real known answer, unless told to lie
       if (Buffer.from(salt, "base64").toString() === "dcenc2|selfcheck") return behavior.lie ? FAKE_KEY.toString("base64") : KAT_B64;
@@ -49,7 +49,7 @@ function install(behavior = {}) {
   assert.equal(await startNative(), true);
   assert.equal(nativeReady(), true);
   assert.match(diag.installed["native crypto"], /^ok/);
-  assert.deepEqual(calls.map((c) => c.name), ["aegires.ping", "aegires.argon2id"]);
+  assert.deepEqual(calls.map((c) => c.name), ["e2eelite.ping", "e2eelite.argon2id", "e2eelite.touchspy", "e2eelite.argon2engine"]);
   // self-check call encodes (password, salt, passes, memoryKiB, outLen) in that order
   assert.deepEqual(calls[1].args, [b64("aegires native check"), b64("dcenc2|selfcheck"), "2", "64", "32"]);
   ok("healthy native half: ping + self-check pass, arguments in the order Kotlin reads them");

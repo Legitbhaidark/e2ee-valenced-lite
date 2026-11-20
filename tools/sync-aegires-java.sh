@@ -5,7 +5,7 @@
 # Only two mechanical edits are made: the package line, and the android.util.Base64 import
 # (replaced by the same-package Base64.java, so the classes also run on a plain JVM for tests).
 set -e
-DST="plugins/aegires-e2ee/src/main/java/aegires/e2ee"
+DST="plugins/aegires-e2ee/src/main/java/e2ee/lite"
 [ -d "$DST" ] || { echo "run from the repo root"; exit 1; }
 SRC="$1"
 if [ -z "$SRC" ]; then
@@ -18,7 +18,7 @@ for f in Crypto Argon2id Blake2b; do
   {
     echo "// Copied from the Aegires Android app: https://github.com/Legitbhaidark/Aegires ($f.java)"
     echo "// Licensed under the GNU LGPL v3 (see LGPL-NOTICE.md). Changed: package line and the Base64 import only."
-    sed -e 's/^package a\.b\.util;/package aegires.e2ee;/' -e '/^import android\.util\.Base64;/d' "$U/$f.java"
+    sed -e 's/^package a\.b\.util;/package e2ee.lite;/' -e '/^import android\.util\.Base64;/d' "$U/$f.java"
   } > "$DST/$f.java"
   echo "updated $f.java"
 done

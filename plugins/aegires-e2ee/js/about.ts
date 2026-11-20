@@ -3,8 +3,8 @@
 declare const __DEV__: boolean;
 
 export const DEVELOPER = "Dark (system32crowdstrikewin11)";
-export const PLUGIN_VERSION = "0.1.34";
-export const BUILD_NUMBER = "26110134"; // YYMM + (minor * 100 + patch); shown as text
+export const PLUGIN_VERSION = "0.1.0";
+export const BUILD_NUMBER = "26110100"; // YYMM + (minor * 100 + patch); shown as text
 
 /**
  * True only in a dev build (`valenced-plugin build --dev`, i.e. gradle -Pdev). The Valenced CLI replaces

@@ -36,9 +36,7 @@ export function initStorage(): void {
   storage.channels ??= {};
   storage.encryptByDefault ??= false;
   storage.showLock ??= true;
-  storage.wallpaperStrength ??= 2; // wallpaper behind Discord: 1 subtle, 2 medium, 3 strong
   storage.autoDecryptMB ??= 25; // encrypted files above this size (MB) show "Tap to decrypt"; 0 = always ask
-  storage.linkPreviews ??= false; // link previews for decrypted messages: this phone contacts the linked site, so opt-in
   storage.debug ??= false;
   if (!DEV_BUILD) {
     // A release build ignores everything the developer options set (e.g. left over from a dev build).

@@ -5,7 +5,7 @@
 // fallback. Large binary data crosses the JS <-> native bridge as base64 strings.
 import { base64Decode, base64Encode } from "./crypto/base64.ts";
 
-const DIR = "aegires";
+const DIR = "e2ee-lite";
 
 /** Discord's native file module (name differs between Discord versions). */
 export function fileModule(): any {
@@ -88,12 +88,12 @@ export async function readUriBase64(uri: string, maxBytes: number): Promise<stri
   return base64Encode(await readUri(uri, maxBytes));
 }
 
-/** Writes bytes to <cache>/aegires/<name>; resolves to a file:// URI. */
+/** Writes bytes to <cache>/e2ee-lite/<name>; resolves to a file:// URI. */
 export function writeCacheFile(name: string, bytes: Uint8Array): Promise<string> {
   return writeCacheFileBase64(name, base64Encode(bytes));
 }
 
-/** Writes base64 data to <cache>/aegires/<name>; resolves to a file:// URI. */
+/** Writes base64 data to <cache>/e2ee-lite/<name>; resolves to a file:// URI. */
 export async function writeCacheFileBase64(name: string, b64: string): Promise<string> {
   const fm = fileModule();
   if (!fm) throw new Error("no native file module");

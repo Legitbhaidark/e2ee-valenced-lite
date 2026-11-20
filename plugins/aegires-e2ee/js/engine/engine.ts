@@ -6,15 +6,14 @@
 // errors, deriving a key fails with a clear message (stored keys keep working). The WebView engine
 // of the Kettu version is gone; the old engine functions below stay as inert stand-ins until attachments are ported.
 import { storage } from "../storage.ts";
-import { syncWallpaperTheme, themesAvailable } from "../wallpaperTheme.ts";
 import { unscoped } from "../host.ts";
 import { getArgonEngine, setArgon2Offload } from "../crypto/kdf2.ts";
 import { base64Decode, base64Encode } from "../crypto/base64.ts";
 import { diag } from "../diag.ts";
 import { AES256, decryptMessage, encryptMessage } from "../crypto/v2.ts";
 
-/** Method namespace: must match the names registered in src/main/kotlin/aegires/e2ee/AegiresNative.kt */
-const NS = "aegires";
+/** Method namespace: must match the names registered in src/main/kotlin/e2ee/lite/LiteNative.kt */
+const NS = "e2eelite";
 
 // Known answer made by an independent Argon2id (Python `cryptography`), at a size small enough to
 // run in milliseconds. If the native result differs, the native half is NOT used: a wrong key
@@ -59,16 +58,6 @@ async function nativeArgon2(password: Uint8Array, salt: Uint8Array, t: number, m
   const base = [base64Encode(password), base64Encode(salt), String(t), String(mKiB), String(len)];
   const out = await callNative(fixed ? "argon2with" : "argon2id", fixed ? [engine, ...base] : base, ARGON_TIMEOUT_MS);
   return typeof out === "string" ? base64Decode(out) : null;
-}
-
-/**
- * Settings > Crypto benchmark. The native half times the Java and C engines and writes the whole report;
- * `js` is the plain JS result for Argon2id, HKDF and AES in turn: [ms ("-1" = not run), output head, reason].
- */
-export async function nativeCryptoBench(memMiB: number, js: string[]): Promise<string> {
-  const out = await callNative("cryptobench", [String(memMiB), ...js], 300000);
-  if (typeof out !== "string") throw new Error("unexpected benchmark reply");
-  return out;
 }
 
 /** Real-size derivation: records success or the exact failure in Diagnostics. */
@@ -156,52 +145,6 @@ export async function nativeInlineStatus(): Promise<string> {
   return typeof out === "string" ? out : String(out ?? "");
 }
 
-/** Turns the liquid glass look of the native players and screens on or off. */
-export async function nativeGlass(mode: number): Promise<void> {
-  await callNative("glass", [String(mode)], 3000);
-}
-
-/** What the native half should draw: bit 1 = liquid glass, bit 2 = soft glass, bit 4 = glass controls. The last two count only while liquid glass is on. */
-export function glassMode(): number {
-  if (storage.liquidGlass !== true) return 0;
-  return 1 | (storage.softGlass === true ? 2 : 0) | (storage.glassControls === true ? 4 : 0);
-}
-
-/** Wallpaper behind Discord itself (the picture is chosen on the settings screen): on, blur, strength 1-3. */
-export async function nativeAppWallpaper(on: boolean, blur: boolean, strength: number): Promise<void> {
-  await callNative("appwallpaper", [on ? "1" : "0", blur ? "1" : "0", String(strength)], 3000);
-}
-
-/** Absolute path of the wallpaper picture, "" when none is set. */
-export async function nativeWallpaperPath(): Promise<string> {
-  const out = await callNative("wallpaperpath", [], 3000);
-  return typeof out === "string" ? out : "";
-}
-
-/** Two colors the native half reads from the wallpaper (average and accent), or null without a picture. */
-export async function nativeWallpaperPalette(): Promise<{ dominant: string; accent: string } | null> {
-  const out = await callNative("wallpaperpalette", [], 3000);
-  if (typeof out !== "string" || !out) return null;
-  try {
-    const p = JSON.parse(out);
-    const ok = (v: unknown) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
-    return ok(p?.dominant) && ok(p?.accent) ? { dominant: p.dominant, accent: p.accent } : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Pushes the saved wallpaper settings to the native layer. The layer on top of the chat is only the
- * fallback: with the Valenced Themes API the wallpaper is a real theme (wallpaperTheme.ts) instead.
- */
-export function applyAppWallpaper(): void {
-  const strength = Math.min(3, Math.max(1, Number(storage.wallpaperStrength) || 2));
-  const layer = storage.appWallpaper === true && !themesAvailable();
-  void nativeAppWallpaper(layer, storage.wallpaperBlur === true, strength).catch(() => {});
-  void syncWallpaperTheme();
-}
-
 /** Starts noting where the screen is touched (needed to find the picture a video plays on). */
 export async function nativeTouchSpy(): Promise<void> {
   await callNative("touchspy", [], 3000);
@@ -272,16 +215,6 @@ export async function nativePlaceholder(kind: "image" | "video" | "audio", state
   const m = typeof out === "string" ? /^(\d+),(\d+)$/.exec(out) : null;
   if (!m || !Number(m[1]) || !Number(m[2])) throw new Error("native returned no picture size");
   return { w: Number(m[1]), h: Number(m[2]) };
-}
-
-export interface LinkPreviewData { title?: string; description?: string; image?: string; site?: string; w?: number; h?: number }
-
-/** Title / description / picture of one https page, read by the native half ON THIS DEVICE. Null when the page has none. */
-export async function nativeLinkPreview(url: string): Promise<LinkPreviewData | null> {
-  const out = await callNative("linkpreview", [url], 20000);
-  if (typeof out !== "string" || !out) return null;
-  const d = JSON.parse(out);
-  return d && typeof d === "object" ? (d as LinkPreviewData) : null;
 }
 
 /** Deletes a file or folder through Valenced's fs method. Never rejects. */
@@ -358,8 +291,6 @@ export async function startNative(): Promise<boolean> {
     const got = await nativeArgon2(utf8(c.password), utf8(c.salt), c.passes, c.memoryKiB, c.outLen);
     if (!got || hex(got) !== c.expectedHex) throw new Error("self-check mismatch - native result is wrong");
     nativeOk = true;
-    void nativeGlass(glassMode()).catch(() => {});
-    applyAppWallpaper();
     void nativeTouchSpy().catch(() => {}); // the UI is up by now, so the window can be wrapped
     diag.argon2Engine = await readArgon2Engine();
     void checkV2();

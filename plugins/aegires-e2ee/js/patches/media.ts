@@ -76,7 +76,7 @@ export function decryptedMedia(ids: string[], messageId?: string, index?: number
 
 /** The media behind a file:// uri Discord reports: one of our chat pictures, or a decrypted media file itself. */
 export function mediaForUri(uri: unknown): PlayableMedia | null {
-  if (typeof uri !== "string" || !uri.startsWith("file://") || !uri.includes("/aegires/")) return null;
+  if (typeof uri !== "string" || !uri.startsWith("file://") || !uri.includes("/e2ee-lite/")) return null;
   let path = uri.split("?")[0].replace(/^file:\/\//, "");
   try { path = decodeURIComponent(path); } catch {}
   const hit = thumbs.get(path);
@@ -211,7 +211,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 async function showPlaceholder(ctx: MsgCtx, a: any, state: "tap" | "work", pct: number | null, alive: () => boolean): Promise<void> {
   const id = idOf(a);
   const kind = kindOfName(a);
-  const path = `${await cacheDir()}/aegires/in/${id}.ph${++phSeq}.jpg`;
+  const path = `${await cacheDir()}/e2ee-lite/in/${id}.ph${++phSeq}.jpg`;
   const dims = await nativePlaceholder(kind, state, pct, Number(a.size) || 0, path);
   if (!alive()) return;
   ph.set(id, { state, w: dims.w, h: dims.h, path, kind });
@@ -242,7 +242,7 @@ function startDecrypt(ctx: MsgCtx, a: any, id: string, keys: Uint8Array[], delay
 
   const track = async () => {
     try {
-      const out = `${await cacheDir()}/aegires/in/${id}.${extOf(originalFileName(String(snapshot.filename)))}`;
+      const out = `${await cacheDir()}/e2ee-lite/in/${id}.${extOf(originalFileName(String(snapshot.filename)))}`;
       let shown = -2; // last percentage drawn (-1 = unknown)
       while (!finished) {
         const pct = started ? await nativeProgress(out).catch(() => null) : 0;
@@ -300,7 +300,7 @@ function startDecrypt(ctx: MsgCtx, a: any, id: string, keys: Uint8Array[], delay
 async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: string, authorId: string): Promise<Decrypted> {
   await purged;
   const name = originalFileName(String(a.filename));
-  const out = `${await cacheDir()}/aegires/in/${id}.${extOf(name)}`;
+  const out = `${await cacheDir()}/e2ee-lite/in/${id}.${extOf(name)}`;
   const url = rawCdnUrl(String(a.url ?? a.proxy_url));
   let size = -1;
   let last: unknown = null;
@@ -327,7 +327,7 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
     h = info?.h ?? (Number(a.height) || 360);
   }
   if (kind !== "image") {
-    const thumbPath = `${await cacheDir()}/aegires/in/${id}.thumb.jpg`;
+    const thumbPath = `${await cacheDir()}/e2ee-lite/in/${id}.thumb.jpg`;
     try {
       const t = await nativeMediaThumb(kind, out, thumbPath, title);
       thumb = thumbPath;
@@ -346,7 +346,7 @@ async function decryptOne(a: any, id: string, keys: Uint8Array[], channelId: str
 // ---------------------------------------------------------------- tap to decrypt
 /** The attachment a placeholder picture uri belongs to. */
 export function placeholderIdForUri(uri: unknown): string | null {
-  if (typeof uri !== "string" || !uri.startsWith("file://") || !uri.includes("/aegires/")) return null;
+  if (typeof uri !== "string" || !uri.startsWith("file://") || !uri.includes("/e2ee-lite/")) return null;
   let path = uri.split("?")[0].replace(/^file:\/\//, "");
   try { path = decodeURIComponent(path); } catch {}
   return phPaths.get(path) ?? null;
@@ -534,7 +534,7 @@ export async function clearMediaCache(): Promise<string> {
   queued.clear();
   purged = (async () => {
     try {
-      await removePath(`${await cacheDir()}/aegires/in`);
+      await removePath(`${await cacheDir()}/e2ee-lite/in`);
     } catch {
       // nothing to delete, or the bridge is not up
     }
@@ -563,7 +563,7 @@ export function clearMedia(): void {
   thumbs.clear();
   purged = (async () => {
     try {
-      await removePath(`${await cacheDir()}/aegires/in`);
+      await removePath(`${await cacheDir()}/e2ee-lite/in`);
     } catch {
       // The native bridge may not be up yet; nothing to delete then.
     }

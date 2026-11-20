@@ -1,4 +1,4 @@
-package aegires.e2ee;
+package e2ee.lite;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -6,7 +6,7 @@ import java.util.Random;
 
 /**
  * FileOps.progress(): the percentage source for the "Decrypting..." placeholder. From the plugin folder:
- *   javac -d /tmp/fp src/main/java/aegires/e2ee/*.java test/native/FileOpsProgressTest.java && java -cp /tmp/fp aegires.e2ee.FileOpsProgressTest
+ *   javac -d /tmp/fp src/main/java/e2ee/lite/*.java test/native/FileOpsProgressTest.java && java -cp /tmp/fp e2ee.lite.FileOpsProgressTest
  */
 public class FileOpsProgressTest {
     static int fails = 0;
@@ -29,7 +29,7 @@ public class FileOpsProgressTest {
         }
         String master = NativeOps.encode(new byte[32]);
         String enc = new File(dir, "enc.bin").getPath();
-        String dec = new File(dir, "aegires/in/dec.bin").getPath();
+        String dec = new File(dir, "e2ee-lite/in/dec.bin").getPath();
         FileOps.seal(master, "0", "111", "222", plain.getPath(), enc, "0");
 
         check("".equals(FileOps.progress(dec)), "no progress entry before the decryption starts");
@@ -73,7 +73,7 @@ public class FileOpsProgressTest {
         try (FileOutputStream f = new FileOutputStream(bad)) {
             f.write(chunk, 0, 5000);
         }
-        String dec2 = new File(dir, "aegires/in/bad.out").getPath();
+        String dec2 = new File(dir, "e2ee-lite/in/bad.out").getPath();
         try {
             FileOps.open(master, "111", "222", bad.getPath(), dec2, "0");
             check(false, "garbage should not decrypt");
