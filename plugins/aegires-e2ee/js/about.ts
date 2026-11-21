@@ -1,10 +1,10 @@
-// Shown in the "Plugin versions" card of the settings. Keep PLUGIN_VERSION in step with manifest.json
+// Version labels (also used for the one-time update hint). Keep PLUGIN_VERSION in step with manifest.json
 // (CI checks it). Dev builds carry a "-devN" label (they go to the "beta" channel), releases do not.
 declare const __DEV__: boolean;
 
 export const DEVELOPER = "Dark (system32crowdstrikewin11)";
-export const PLUGIN_VERSION = "0.1.1";
-export const BUILD_NUMBER = "26110101"; // YYMM + (minor * 100 + patch); shown as text
+export const PLUGIN_VERSION = "0.1.2";
+export const BUILD_NUMBER = "26110102"; // YYMM + (minor * 100 + patch); shown as text
 
 /**
  * True only in a dev build (`valenced-plugin build --dev`, i.e. gradle -Pdev). The Valenced CLI replaces

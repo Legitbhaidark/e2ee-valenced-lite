@@ -11,12 +11,13 @@ In Valenced, add the repository `https://legitbhaidark.github.io/e2ee-valenced-l
 - An **E2EE** button in the chat header switches encryption on or off for that chat; decrypted messages get a lock icon.
 - Videos and audio play in the chat and full screen.
 
-**Settings** (same as the Aegires app's Session menu)
-- **Set encryption key**
-- **Encryption preset** (AES-128-GCM, AES-192-GCM, AES-256-GCM)
+**Settings** (the plugin's gear button; built from Discord's own components, same two items as the Aegires app's Session menu)
+- **Password**: type it, then **Set key** or **Clear key**
+- **Profile**: AES-128-GCM, AES-192-GCM or AES-256-GCM
+- There is no on/off switch in the settings: the **E2EE** button in the chat header does that, per chat.
 
 **Layout**
-- `plugins/aegires-e2ee/` - the plugin (plugin id `io.github.legitbhaidark.e2ee-lite`): `js/` (hooks, crypto), `src/main/kotlin` and `src/main/java` (native module), `src/main/c` (fast Argon2id).
+- `plugins/aegires-e2ee/` - the plugin (plugin id `io.github.legitbhaidark.e2ee-lite`): `js/` (hooks, crypto, `ui/` settings page), `src/main/kotlin` and `src/main/java` (native module), `src/main/c` (fast Argon2id).
 - `RELEASING.md` - branches, builds and channels. `main` is stable, `dev` builds are `-devN` pre-releases.
 
 Build with `./gradlew` (see `RELEASING.md`). Tests: `node --experimental-strip-types plugins/aegires-e2ee/test/<name>.mjs`.

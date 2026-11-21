@@ -4,6 +4,11 @@ E2EE Lite for Valenced. Newest first. The release workflow uses the `## <version
 GitHub Release notes for that version; a version without a section gets its commit list instead.
 Stable releases come from `main`, `-devN` pre-releases from `dev`.
 
+## 0.1.2 - stable
+- New settings page that looks like Discord's own settings (built from Discord's components): **Password** with *Set key* and *Clear key* and a "Key set." / "No key set." line, and a **Profile** list (AES-128 / 192 / 256-GCM). The on/off switch is not in the settings: the E2EE button in the chat header does that.
+- The gear button now opens this page directly (the separate dialog is gone, so no more settings inside settings).
+- If a Discord update renames one of its components, the page falls back to plain controls with the same two settings instead of crashing.
+
 ## 0.1.1 - stable
 - Smaller package: the 32-bit x86 native library is no longer built (no phone uses it). arm64-v8a, armeabi-v7a and x86_64 stay; a device without a matching library uses the Java fallback.
 

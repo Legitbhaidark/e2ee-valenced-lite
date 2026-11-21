@@ -187,21 +187,6 @@ export async function nativeEncButtonStatus(): Promise<string> {
   return typeof out === "string" ? out : String(out ?? "");
 }
 
-/** Native settings screen (SettingsScreen.kt): open it with the current values, change them while open, poll what the user did. */
-export async function nativeSettingsOpen(stateJson: string): Promise<void> {
-  await callNative("settingsopen", [stateJson], 5000);
-}
-
-export async function nativeSettingsUpdate(partialJson: string): Promise<void> {
-  await callNative("settingsupdate", [partialJson], 3000);
-}
-
-export async function nativeSettingsTake(): Promise<{ open: boolean; events: any[] }> {
-  const out = await callNative("settingstake", [], 3000);
-  const r = JSON.parse(typeof out === "string" ? out : "{}");
-  return { open: !!r.open, events: Array.isArray(r.events) ? r.events : [] };
-}
-
 /** Presses of the header button since the last call. */
 export async function nativeEncButtonTaps(): Promise<number> {
   const out = await callNative("encbuttontaps", [], 3000);

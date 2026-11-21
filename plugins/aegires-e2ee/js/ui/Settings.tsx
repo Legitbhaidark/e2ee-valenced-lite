@@ -1,24 +1,21 @@
-// Settings entry point. The settings themselves are the native (Kotlin) screen - SettingsScreen.kt - so this file only has:
-//   - the launcher the plugin's gear button opens: it opens the native screen at once and steps back
-//     when that screen is closed, and
-//   - a small fallback screen for when the native module is missing (set the global key, and in dev
-//     builds read the Diagnostics).
-// Built from plain React Native primitives, because Discord's own form components get renamed between
-// versions. Colors assume Discord's dark theme.
+// Settings page: what the plugin's gear button opens. It looks like Discord's own settings screens
+// (Password, Profile) because it is built from Discord's design components (Valenced hands them to
+// plugins as api.discord.design), so fonts, colors and themes always match the app.
+//
+// Two things only, like the Aegires app: the encryption KEY and the encryption PROFILE (preset).
+// There is no on/off switch here: the E2EE button in the chat header does that, per chat.
+//
+// If this Discord build renames a design component, the page falls back to plain React Native
+// controls (same two settings), and if anything throws it shows the error on screen instead of
+// Discord's crash page. What the page does lives in settingsModel.ts; this file only draws.
 import { React, comp, reactDiagnostics } from "../rt.ts";
-import { storageNote } from "../storage.ts";
-import { notify as showToast } from "../notify.ts";
-import { getPreset, hasGlobalKey, passwordRule, setGlobalPassword } from "../state.ts";
-import { getSelfId } from "../self.ts";
-import { diagLines } from "../diag.ts";
-import { nativeReady } from "../engine/engine.ts";
-import { openNativeSettings } from "../nativeSettings.ts";
+import { PRESETS, getPreset, minPasswordLength } from "../state.ts";
 import { DEV_BUILD } from "../about.ts";
-import { unscoped } from "../host.ts";
+import { designOrNull, diagText, message, useKeySettings } from "./settingsModel.ts";
 
 // React Native binds after this script is evaluated, so each primitive is resolved at render time.
-const lazy = (names: string[], fallback?: () => any) => (props: any) => {
-  const Real = names.map((n) => comp(n)).find(Boolean) ?? (fallback ? fallback() : null);
+const lazy = (names: string[]) => (props: any) => {
+  const Real = names.map((n) => comp(n)).find(Boolean);
   return React.createElement(Real, props);
 };
 const View: any = lazy(["View"]);
@@ -27,105 +24,98 @@ const ScrollView: any = lazy(["ScrollView", "View"]);
 const TextInput: any = lazy(["TextInput", "Text"]);
 const Touch: any = lazy(["TouchableOpacity", "Pressable", "TouchableWithoutFeedback", "View"]);
 
-const C = { text: "#dbdee1", muted: "#949ba4", card: "#2b2d31", input: "#1e1f22", accent: "#5865f2", danger: "#da373c" };
-
-function Button(props: { label: string; onPress: () => void; danger?: boolean; busy?: boolean; key?: any }) {
+function DesignSettings(props: { D: any }) {
+  const { Text: DText, TextInput: DInput, Button: DButton, TableRadioGroup, TableRadioRow } = props.D;
+  const s = useKeySettings();
   return (
-    <Touch
-      disabled={props.busy}
-      onPress={props.onPress}
-      style={{ backgroundColor: props.danger ? C.danger : C.accent, opacity: props.busy ? 0.5 : 1, padding: 10, borderRadius: 6, marginTop: 8 }}
-    >
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+      <DText variant="text-md/semibold" color="text-muted" style={{ marginBottom: 8 }}>Password</DText>
+      <DInput value={s.pw} onChange={s.setPw} placeholder={minPasswordLength() + "-256 characters"} secureTextEntry maxLength={256} isDisabled={s.busy} />
+      <View style={{ marginTop: 16 }}>
+        <DButton text="Set key" variant="primary" size="md" loading={s.busy} disabled={s.busy} onPress={s.setKey} />
+      </View>
+      <View style={{ marginTop: 8 }}>
+        <DButton text="Clear key" variant="secondary" size="md" disabled={s.busy} onPress={s.clearKey} />
+      </View>
+      <DText variant="text-md/medium" color="text-muted" style={{ marginTop: 12 }}>{s.status}</DText>
+
+      <View style={{ marginTop: 28 }}>
+        <TableRadioGroup title="Profile" value={getPreset().index} onChange={(v: any) => { if (v !== null && v !== undefined) s.pick(Number(v)); }}>
+          {PRESETS.map((p: any) => (
+            <TableRadioRow key={p.index} label={p.label} value={p.index} />
+          ))}
+        </TableRadioGroup>
+      </View>
+
+      {DEV_BUILD ? (
+        <View style={{ marginTop: 28 }}>
+          <DText variant="text-md/semibold" color="text-muted" style={{ marginBottom: 8 }}>Diagnostics</DText>
+          <DText selectable variant="text-xs/normal" color="text-muted" style={{ fontFamily: "monospace" }}>{diagText()}</DText>
+        </View>
+      ) : null}
+    </ScrollView>
+  );
+}
+
+// ---- plain React Native fallback ------------------------------------------------------------------
+
+const C = { text: "#dbdee1", muted: "#949ba4", input: "#1e1f22", accent: "#5865f2", secondary: "#4e5058", row: "#2b2d31" };
+
+function PlainButton(props: { label: string; onPress: () => void; secondary?: boolean; busy?: boolean }) {
+  return (
+    <Touch disabled={props.busy} onPress={props.onPress} style={{ backgroundColor: props.secondary ? C.secondary : C.accent, opacity: props.busy ? 0.5 : 1, padding: 12, borderRadius: 8, marginTop: 8 }}>
       <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>{props.label}</Text>
     </Touch>
   );
 }
 
-function Field(props: { value: string; onChange: (v: string) => void; placeholder: string; secret?: boolean }) {
+function PlainSettings(props: { error?: any }) {
+  const s = useKeySettings();
+  const current = getPreset().index;
   return (
-    <TextInput
-      value={props.value}
-      onChangeText={props.onChange}
-      placeholder={props.placeholder}
-      placeholderTextColor={C.muted}
-      secureTextEntry={!!props.secret}
-      autoCapitalize="none"
-      autoCorrect={false}
-      style={{ backgroundColor: C.input, color: C.text, borderRadius: 6, padding: 10, marginTop: 8 }}
-    />
-  );
-}
-
-function Card(props: { title: string; children?: any; hint?: string }) {
-  return (
-    <View style={{ backgroundColor: C.card, borderRadius: 8, padding: 12, marginBottom: 12 }}>
-      <Text style={{ color: C.text, fontSize: 16, fontWeight: "700" }}>{props.title}</Text>
-      {props.hint ? <Text style={{ color: C.muted, marginTop: 4 }}>{props.hint}</Text> : null}
-      {props.children}
-    </View>
-  );
-}
-
-function Fallback(props: { why: string; retry: () => void }) {
-  const [, bump] = React.useState(0);
-  const refresh = () => bump((n: number) => n + 1);
-  const [pw, setPw] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [pct, setPct] = React.useState(-1);
-  return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
-      <Card title="Settings" hint={props.why || "The native settings screen could not be opened."}>
-        <Button label="Try again" onPress={props.retry} />
-        {!nativeReady() ? (
-          <>
-            <Text style={{ color: C.muted, marginTop: 8 }}>{"Native module not loaded. You can still set the global key here (at least " + passwordRule() + "):"}</Text>
-            <Field value={pw} onChange={setPw} placeholder="Shared password" secret />
-            <Button
-              label={busy ? "Deriving key" + (pct >= 0 ? " " + pct + "%" : "...") : "Set global key"}
-              busy={busy}
-              onPress={async () => {
-                if (!pw) return showToast("Password cannot be empty");
-                setBusy(true);
-                try {
-                  await setGlobalPassword(pw, (f: number) => setPct(Math.round(f * 100)));
-                  setPw("");
-                  showToast("Set global key - done");
-                } catch (e) {
-                  showToast("Set global key failed: " + String(e));
-                } finally {
-                  setBusy(false);
-                  setPct(-1);
-                  refresh();
-                }
-              }}
-            />
-          </>
-        ) : null}
-      </Card>
-      {DEV_BUILD ? (
-        <Card title="Diagnostics" hint="What the hooks are doing right now. Press Refresh after sending / receiving a message.">
-          <Button label="Refresh" onPress={() => refresh()} />
-          <Text selectable style={{ color: C.text, marginTop: 8, fontFamily: "monospace", fontSize: 12 }}>
-            {"global key: " + (hasGlobalKey() ? "set" : "NOT SET") + "\nformat: v2 " + getPreset().label + (storageNote() ? "\nSTORAGE: " + storageNote() : "") + "\nown user id: " + (getSelfId() ? "known" : "NOT FOUND YET") + "\n" + diagLines().join("\n")}
-          </Text>
-        </Card>
-      ) : null}
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+      {props.error ? <Text style={{ color: C.muted, marginBottom: 12 }}>{"Discord's settings components could not be drawn (" + message(props.error) + "), so this is the plain version."}</Text> : null}
+      <Text style={{ color: C.muted, fontWeight: "600", marginBottom: 8 }}>Password</Text>
+      <TextInput
+        value={s.pw}
+        onChangeText={s.setPw}
+        placeholder={minPasswordLength() + "-256 characters"}
+        placeholderTextColor={C.muted}
+        secureTextEntry
+        maxLength={256}
+        editable={!s.busy}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={{ backgroundColor: C.input, color: C.text, borderRadius: 8, padding: 12 }}
+      />
+      <PlainButton label={s.busy ? "Setting key..." : "Set key"} busy={s.busy} onPress={s.setKey} />
+      <PlainButton label="Clear key" secondary busy={s.busy} onPress={s.clearKey} />
+      <Text style={{ color: C.muted, marginTop: 12 }}>{s.status}</Text>
+      <Text style={{ color: C.muted, fontWeight: "600", marginTop: 28, marginBottom: 8 }}>Profile</Text>
+      {PRESETS.map((p: any) => (
+        <Touch key={p.index} onPress={() => s.pick(p.index)} style={{ backgroundColor: C.row, padding: 14, marginBottom: 2 }}>
+          <Text style={{ color: C.text }}>{(p.index === current ? "\u25CF  " : "\u25CB  ") + p.label}</Text>
+        </Touch>
+      ))}
+      {DEV_BUILD ? <Text selectable style={{ color: C.muted, marginTop: 28, fontFamily: "monospace", fontSize: 12 }}>{diagText()}</Text> : null}
     </ScrollView>
   );
 }
+
+// ---- error boundary and entry point ---------------------------------------------------------------
 
 function CrashReport(props: { error: any }) {
   const e = props.error;
   const msg = [String(e), String(e?.stack ?? "").slice(0, 1200), reactDiagnostics()].join("\n");
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
-      <Text selectable style={{ color: C.danger }}>{msg}</Text>
+      <Text selectable style={{ color: "#da373c" }}>{msg}</Text>
     </ScrollView>
   );
 }
 
-// If anything in the screen throws, show the error text on screen instead of Discord's "Uh Oh" crash
-// page. React.Component is only available at render time, so the class is built on first use.
+// If a child throws, draw props.fallback(error) instead of Discord's "Uh Oh" crash page.
+// React.Component only exists at render time, so the class is built on first use.
 let BoundaryClass: any = null;
 function boundary(): any {
   if (BoundaryClass) return BoundaryClass;
@@ -142,52 +132,25 @@ function boundary(): any {
       console.log("[aegires-e2ee] settings crashed", error);
     }
     render() {
-      return (this as any).state.error ? <CrashReport error={(this as any).state.error} /> : (this as any).props.children;
+      const error = (this as any).state.error;
+      return error ? (this as any).props.fallback(error) : (this as any).props.children;
     }
   };
   return BoundaryClass;
 }
 
-/** Navigation handle of this screen (to leave it again), if Valenced exposes one. */
-function useNav(): any {
-  try {
-    const hook = unscoped().externals?.ReactNavigation?.ReactNavigationNative?.useNavigation;
-    return typeof hook === "function" ? hook() : null;
-  } catch {
-    return null;
-  }
-}
-
-/** What the plugin's gear button opens: the native screen at once, and a step back when it closes. */
 export default function Settings() {
-  const nav = useNav();
-  const [mode, setMode] = React.useState("opening");
-  const [why, setWhy] = React.useState("");
-  const open = () => {
-    setMode("opening");
-    openNativeSettings(() => {
-      setMode("closed");
-      try { nav?.goBack?.(); } catch {}
-    }).then((err: string) => {
-      if (err) {
-        setWhy(err);
-        setMode("fallback");
-      }
-    });
-  };
-  React.useEffect(() => { open(); }, []);
-  if (mode === "fallback") {
-    const Boundary = boundary();
-    return (
-      <Boundary>
-        <Fallback why={why} retry={open} />
-      </Boundary>
-    );
-  }
+  const Boundary = boundary();
+  const D = designOrNull();
   return (
-    <View style={{ flex: 1, padding: 12 }}>
-      <Text style={{ color: C.muted }}>{mode === "closed" ? "Settings closed." : "Opening settings..."}</Text>
-      <Button label="Open settings" onPress={open} />
-    </View>
+    <Boundary
+      fallback={(e: any) => (
+        <Boundary fallback={(e2: any) => <CrashReport error={e2} />}>
+          <PlainSettings error={e} />
+        </Boundary>
+      )}
+    >
+      {D ? <DesignSettings D={D} /> : <PlainSettings />}
+    </Boundary>
   );
 }

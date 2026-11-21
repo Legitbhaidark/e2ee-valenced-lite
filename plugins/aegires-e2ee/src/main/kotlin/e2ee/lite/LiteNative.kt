@@ -249,23 +249,6 @@ val liteNative = plugin {
         // How many times the button was pressed since the last call.
         registerNativeMethod("e2eelite.encbuttontaps") { _ -> EncryptButton.takeTaps().toString() }
 
-        // The settings screen (SettingsScreen.kt): open it, change what it shows, and poll what the user did.
-        registerNativeMethod("e2eelite.settingsopen") { rawArgs ->
-            val args = rawArgs.asDelegate()
-            val json: String by args.string()
-            withAppActivity { SettingsScreen.show(it, json) }
-            "ok"
-        }
-
-        registerNativeMethod("e2eelite.settingsupdate") { rawArgs ->
-            val args = rawArgs.asDelegate()
-            val json: String by args.string()
-            SettingsScreen.update(json)
-            "ok"
-        }
-
-        registerNativeMethod("e2eelite.settingstake") { _ -> SettingsScreen.take() }
-
         // Full-screen playback of a decrypted video file (path under .../e2ee-lite/). Returns "ok".
         registerNativeMethod("e2eelite.playvideo") { rawArgs ->
             val args = rawArgs.asDelegate()
@@ -277,7 +260,6 @@ val liteNative = plugin {
     }
 
     stop {
-        SettingsScreen.close()
         VideoPlayer.close()
         InlineVideo.close()
         InlineAudio.close()
